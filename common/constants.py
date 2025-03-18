@@ -1,0 +1,64 @@
+# constants.py
+"""
+常量定义模块：定义游戏中使用的常量
+"""
+
+# 游戏常量
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+FPS = 60
+TICK_RATE = 30  # 游戏逻辑更新率
+
+# 游戏目录
+RESOURCES_DIR = "resources"
+IMAGES_DIR = f"{RESOURCES_DIR}/images"
+SOUNDS_DIR = f"{RESOURCES_DIR}/sounds"
+MAPS_DIR = f"{RESOURCES_DIR}/maps"
+
+# 坦克常量
+TANK_SPEED = 3
+TANK_ROTATION_SPEED = 3
+TANK_HEALTH = 100
+TANK_AMMO = 20
+TANK_RELOAD_TIME = 800  # 毫秒
+TANK_WIDTH = 40
+TANK_HEIGHT = 40
+
+# 子弹常量
+BULLET_SPEED = 7
+BULLET_DAMAGE = 20
+BULLET_LIFETIME = 5  # 秒
+BULLET_RADIUS = 4
+
+# 障碍物常量
+WALL_HEALTH = float('inf')  # 不可破坏
+BRICK_HEALTH = 50
+OBSTACLE_SIZE = 40  # 默认障碍物尺寸
+
+# 颜色
+COLOR_BLACK = (0, 0, 0)
+COLOR_WHITE = (255, 255, 255)
+COLOR_RED = (255, 0, 0)
+COLOR_GREEN = (0, 255, 0)
+COLOR_BLUE = (0, 0, 255)
+COLOR_YELLOW = (255, 255, 0)
+COLOR_GRAY = (128, 128, 128)
+COLOR_DARK_GREEN = (0, 100, 0)
+COLOR_BROWN = (165, 42, 42)
+
+# 方向常量
+DIRECTION_UP = 0
+DIRECTION_RIGHT = 1
+DIRECTION_DOWN = 2
+DIRECTION_LEFT = 3
+
+# 地图常量
+MAP_WIDTH = 20  # 地图宽度（以格子数计）
+MAP_HEIGHT = 15  # 地图高度（以格子数计）
+GRID_SIZE = 40   # 每个格子的大小（像素）
+
+# 游戏事件类型
+EVENT_HIT = 1
+EVENT_DESTROY = 2
+EVENT_GAME_START = 3
+EVENT_GAME_END = 4

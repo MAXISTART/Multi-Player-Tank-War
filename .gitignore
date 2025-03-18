@@ -1,0 +1,6 @@
+# 忽略 IntelliJ IDEA 配置文件和目录
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
