@@ -4,3 +4,6 @@
 *.iws
 *.ipr
 out/
+
+# 忽略 python 生成文件
+*.pyc
