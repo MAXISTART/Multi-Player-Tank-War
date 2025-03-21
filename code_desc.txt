@@ -1,0 +1,3057 @@
+文件名: common/constants.py
+文件内容
+======================================================================
+# constants.py
+"""
+常量定义模块：定义游戏中使用的常量
+"""
+
+# 游戏常量
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+FPS = 60
+TICK_RATE = 30  # 游戏逻辑更新率
+
+# 游戏目录
+RESOURCES_DIR = "resources"
+IMAGES_DIR = f"{RESOURCES_DIR}/images"
+SOUNDS_DIR = f"{RESOURCES_DIR}/sounds"
+MAPS_DIR = f"{RESOURCES_DIR}/maps"
+
+# 坦克常量
+TANK_SPEED = 5  # 提高坦克速度，从3增加到5
+TANK_ROTATION_SPEED = 3
+TANK_HEALTH = 100
+TANK_AMMO = 999999
+TANK_RELOAD_TIME = 300  # 毫秒
+TANK_WIDTH = 40
+TANK_HEIGHT = 40
+
+# 子弹常量
+BULLET_SPEED = 15
+BULLET_DAMAGE = 20
+BULLET_LIFETIME = 5  # 秒
+BULLET_RADIUS = 4
+
+# 障碍物常量
+WALL_HEALTH = float('inf')  # 不可破坏
+BRICK_HEALTH = 50
+OBSTACLE_SIZE = 40  # 默认障碍物尺寸
+
+# 粒子系统常量
+PARTICLE_MAX_COUNT = 2000  # 最大粒子数量限制
+EXPLOSION_PARTICLE_COUNT = 30
+DEBRIS_PARTICLE_COUNT = 20
+SPARK_PARTICLE_COUNT = 10
+
+# 颜色
+COLOR_BLACK = (0, 0, 0)
+COLOR_WHITE = (255, 255, 255)
+COLOR_RED = (255, 0, 0)
+COLOR_GREEN = (0, 255, 0)
+COLOR_BLUE = (0, 0, 255)
+COLOR_YELLOW = (255, 255, 0)
+COLOR_GRAY = (128, 128, 128)
+COLOR_DARK_GREEN = (0, 100, 0)
+COLOR_BROWN = (165, 42, 42)
+COLOR_ORANGE = (255, 165, 0)
+COLOR_PURPLE = (128, 0, 128)
+COLOR_PINK = (255, 192, 203)
+COLOR_LIGHT_BLUE = (173, 216, 230)
+COLOR_DARK_RED = (139, 0, 0)
+
+# 方向常量
+DIRECTION_UP = 0
+DIRECTION_RIGHT = 1
+DIRECTION_DOWN = 2
+DIRECTION_LEFT = 3
+
+# 地图常量
+MAP_WIDTH = 20  # 地图宽度（以格子数计）
+MAP_HEIGHT = 15  # 地图高度（以格子数计）
+GRID_SIZE = 40   # 每个格子的大小（像素）
+
+# 游戏事件类型
+EVENT_HIT = 1
+EVENT_DESTROY = 2
+EVENT_GAME_START = 3
+EVENT_GAME_END = 4
+
+# 游戏状态
+STATE_MENU = 0
+STATE_PLAYING = 1
+STATE_PAUSED = 2
+STATE_GAME_OVER = 3
+
+# 游戏模式
+MODE_SINGLE_PLAYER = 0
+MODE_TWO_PLAYER = 1
+MODE_NETWORK = 2
+
+# UI常量
+UI_BUTTON_WIDTH = 200
+UI_BUTTON_HEIGHT = 50
+UI_BUTTON_PADDING = 20
+UI_FONT_SIZE = 36
+UI_FONT_COLOR = COLOR_WHITE
+UI_BUTTON_COLOR = (80, 80, 80)
+UI_BUTTON_HOVER_COLOR = (100, 100, 100)
+UI_BUTTON_TEXT_COLOR = COLOR_WHITE
+
+# 音效音量
+SOUND_VOLUME = 0.5
+MUSIC_VOLUME = 0.3
+
+文件名: common/deterministic_engine.py
+文件内容
+======================================================================
+# deterministic_engine.py
+"""
+确定性引擎模块：提供可重现的随机数生成和物理计算
+
+这个模块确保在相同的种子和输入条件下，游戏的随机元素和物理计算
+始终产生相同的结果，有助于游戏回放和网络同步。
+"""
+
+import random
+import math
+
+
+class DeterministicRandom:
+    """
+    确定性随机数生成器
+
+    使用固定的种子和算法确保在相同种子下产生相同的随机序列。
+    用于地图生成、AI决策等需要可重现随机性的场景。
+    """
+
+    def __init__(self, seed=None):
+        """初始化随机数生成器，可选指定种子"""
+        self._random = random.Random()
+        self.seed(seed)
+
+    def seed(self, seed=None):
+        """设置随机数生成器的种子"""
+        self._random.seed(seed)
+        return seed
+
+    def random(self):
+        """返回 [0.0, 1.0) 范围内的随机浮点数"""
+        return self._random.random()
+
+    def uniform(self, a, b):
+        """返回 [a, b) 范围内的随机浮点数"""
+        return self._random.uniform(a, b)
+
+    def randint(self, a, b):
+        """返回 [a, b] 范围内的随机整数"""
+        return self._random.randint(a, b)
+
+    def choice(self, seq):
+        """从非空序列中随机选择一个元素"""
+        return self._random.choice(seq)
+
+    def choices(self, population, weights=None, k=1):
+        """从population中随机选择k个元素，可以指定权重"""
+        return self._random.choices(population, weights, k=k)
+
+    def shuffle(self, x):
+        """将序列x随机打乱"""
+        return self._random.shuffle(x)
+
+    def sample(self, population, k):
+        """从population中随机抽取k个不重复的元素"""
+        return self._random.sample(population, k)
+
+    def randrange(self, start, stop=None, step=1):
+        """返回range(start, stop, step)中的随机元素"""
+        return self._random.randrange(start, stop, step)
+
+    def normalvariate(self, mu, sigma):
+        """返回均值为mu，标准差为sigma的正态分布随机数"""
+        return self._random.normalvariate(mu, sigma)
+
+
+class DeterministicPhysics:
+    """
+    确定性物理计算
+
+    提供确定性的物理计算函数，确保相同输入产生相同输出。
+    用于碰撞检测、移动计算等需要精确可重现的场景。
+    """
+
+    @staticmethod
+    def check_collision(rect1, rect2):
+        """
+        检查两个矩形是否碰撞
+
+        Args:
+            rect1: 第一个矩形 (x, y, width, height)
+            rect2: 第二个矩形 (x, y, width, height)
+
+        Returns:
+            如果两个矩形重叠，返回True
+        """
+        x1, y1, w1, h1 = rect1
+        x2, y2, w2, h2 = rect2
+
+        # 检查两个矩形是否不重叠
+        if (x1 >= x2 + w2 or  # rect1在rect2右侧
+                x1 + w1 <= x2 or  # rect1在rect2左侧
+                y1 >= y2 + h2 or  # rect1在rect2下方
+                y1 + h1 <= y2):  # rect1在rect2上方
+            return False
+
+        return True
+
+    @staticmethod
+    def check_circle_collision(circle1, circle2):
+        """
+        检查两个圆是否碰撞
+
+        Args:
+            circle1: 第一个圆 (x, y, radius)
+            circle2: 第二个圆 (x, y, radius)
+
+        Returns:
+            如果两个圆重叠，返回True
+        """
+        x1, y1, r1 = circle1
+        x2, y2, r2 = circle2
+
+        # 计算两个圆心之间的距离
+        distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+        # 如果距离小于两个半径之和，则圆重叠
+        return distance < (r1 + r2)
+
+    @staticmethod
+    def check_circle_rect_collision(circle, rect):
+        """
+        检查圆与矩形是否碰撞
+
+        Args:
+            circle: 圆 (x, y, radius)
+            rect: 矩形 (x, y, width, height)
+
+        Returns:
+            如果圆与矩形重叠，返回True
+        """
+        circle_x, circle_y, radius = circle
+        rect_x, rect_y, rect_w, rect_h = rect
+
+        # 找到矩形上离圆心最近的点
+        closest_x = max(rect_x, min(circle_x, rect_x + rect_w))
+        closest_y = max(rect_y, min(circle_y, rect_y + rect_h))
+
+        # 计算圆心到矩形最近点的距离
+        distance = math.sqrt((circle_x - closest_x) ** 2 + (circle_y - closest_y) ** 2)
+
+        # 如果距离小于圆的半径，则相交
+        return distance < radius
+
+    @staticmethod
+    def calculate_reflection(direction, normal):
+        """
+        计算反射方向
+
+        Args:
+            direction: 入射方向向量 (dx, dy)
+            normal: 表面法线向量 (nx, ny)，应该是单位向量
+
+        Returns:
+            反射方向向量 (reflect_dx, reflect_dy)
+        """
+        dx, dy = direction
+        nx, ny = normal
+
+        # 确保法线是单位向量
+        norm = math.sqrt(nx * nx + ny * ny)
+        if norm != 0:
+            nx /= norm
+            ny /= norm
+
+        # 计算入射方向与法线的点积
+        dot_product = dx * nx + dy * ny
+
+        # 计算反射方向 (r = d - 2(d·n)n)
+        reflect_dx = dx - 2 * dot_product * nx
+        reflect_dy = dy - 2 * dot_product * ny
+
+        return (reflect_dx, reflect_dy)
+
+    @staticmethod
+    def get_rect_center(rect):
+        """
+        获取矩形的中心点
+
+        Args:
+            rect: 矩形 (x, y, width, height)
+
+        Returns:
+            中心点坐标 (center_x, center_y)
+        """
+        x, y, width, height = rect
+        return (x + width / 2, y + height / 2)
+
+    @staticmethod
+    def vector_magnitude(vector):
+        """
+        计算向量的大小
+
+        Args:
+            vector: 向量 (x, y)
+
+        Returns:
+            向量的大小
+        """
+        return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
+
+    @staticmethod
+    def vector_normalize(vector):
+        """
+        将向量归一化为单位向量
+
+        Args:
+            vector: 向量 (x, y)
+
+        Returns:
+            归一化后的向量 (nx, ny)，如果向量为零向量，则返回 (0, 0)
+        """
+        magnitude = DeterministicPhysics.vector_magnitude(vector)
+        if magnitude == 0:
+            return (0, 0)
+        return (vector[0] / magnitude, vector[1] / magnitude)
+
+    @staticmethod
+    def distance(point1, point2):
+        """
+        计算两点之间的距离
+
+        Args:
+            point1: 第一个点 (x, y)
+            point2: 第二个点 (x, y)
+
+        Returns:
+            两点之间的欧几里得距离
+        """
+        return math.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
+
+    @staticmethod
+    def angle_between_points(point1, point2):
+        """
+        计算从point1到point2的角度（弧度）
+
+        Args:
+            point1: 起点 (x, y)
+            point2: 终点 (x, y)
+
+        Returns:
+            从point1到point2的角度，以弧度计，0表示向右，π/2表示向下
+        """
+        return math.atan2(point2[1] - point1[1], point2[0] - point1[0])
+
+    @staticmethod
+    def angle_to_vector(angle):
+        """
+        将角度转换为单位向量
+
+        Args:
+            angle: 角度，以弧度计
+
+        Returns:
+            对应的单位向量 (x, y)
+        """
+        return (math.cos(angle), math.sin(angle))
+
+    @staticmethod
+    def vector_to_angle(vector):
+        """
+        将向量转换为角度
+
+        Args:
+            vector: 向量 (x, y)
+
+        Returns:
+            向量的角度，以弧度计，范围在 [-π, π]
+        """
+        return math.atan2(vector[1], vector[0])
+
+    @staticmethod
+    def rotate_point(point, center, angle):
+        """
+        围绕中心点旋转一个点
+
+        Args:
+            point: 要旋转的点 (x, y)
+            center: 旋转中心 (x, y)
+            angle: 旋转角度，以弧度计，正值表示逆时针旋转
+
+        Returns:
+            旋转后的点 (x', y')
+        """
+        # 将点相对于中心点平移
+        x, y = point[0] - center[0], point[1] - center[1]
+
+        # 应用旋转
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        x_new = x * cos_a - y * sin_a
+        y_new = x * sin_a + y * cos_a
+
+        # 平移回原来的坐标系
+        return (x_new + center[0], y_new + center[1])
+
+文件名: common/utils.py
+文件内容
+======================================================================
+# utils.py
+"""
+工具函数模块：通用工具函数
+"""
+
+import math
+import time
+import uuid
+import logging
+import os
+
+
+def ensure_dir(directory):
+    """确保目录存在，如果不存在则创建"""
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+
+def generate_unique_id():
+    """生成唯一标识符"""
+    return str(uuid.uuid4())
+
+
+def distance(pos1, pos2):
+    """计算两点间的距离"""
+    return math.sqrt((pos2[0] - pos1[0]) ** 2 + (pos2[1] - pos1[1]) ** 2)
+
+
+def angle_between(pos1, pos2):
+    """计算两点间的角度（弧度）"""
+    return math.atan2(pos2[1] - pos1[1], pos2[0] - pos1[0])
+
+
+def angle_to_direction(angle):
+    """将角度（弧度）转换为方向向量"""
+    return (math.cos(angle), math.sin(angle))
+
+
+def direction_to_angle(direction):
+    """将方向向量转换为角度（弧度）"""
+    return math.atan2(direction[1], direction[0])
+
+
+def vector_from_angle(angle, length=1.0):
+    """从角度创建向量"""
+    return (math.cos(angle) * length, math.sin(angle) * length)
+
+
+def vector_length(vector):
+    """计算向量长度"""
+    return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
+
+
+def normalize_vector(vector):
+    """标准化向量"""
+    length = vector_length(vector)
+    if length == 0:
+        return (0, 0)
+    return (vector[0] / length, vector[1] / length)
+
+
+def clamp(value, min_value, max_value):
+    """将值限制在指定范围内"""
+    return max(min_value, min(max_value, value))
+
+
+def is_point_in_rect(point, rect):
+    """
+    检查点是否在矩形内
+    rect 格式为 (x, y, width, height)
+    """
+    return (rect[0] <= point[0] <= rect[0] + rect[2] and
+            rect[1] <= point[1] <= rect[1] + rect[3])
+
+
+def rect_from_center(center, width, height):
+    """从中心点创建矩形"""
+    return (center[0] - width / 2, center[1] - height / 2, width, height)
+
+
+def current_time_ms():
+    """获取当前时间的毫秒表示"""
+    return int(time.time() * 1000)
+
+
+def setup_logger(name, log_file, level=logging.INFO):
+    """设置日志记录器"""
+    handler = logging.FileHandler(log_file)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
+
+
+def log_message(message, level='INFO', logger=None):
+    """记录日志消息"""
+    if logger:
+        if level == 'DEBUG':
+            logger.debug(message)
+        elif level == 'INFO':
+            logger.info(message)
+        elif level == 'WARNING':
+            logger.warning(message)
+        elif level == 'ERROR':
+            logger.error(message)
+        elif level == 'CRITICAL':
+            logger.critical(message)
+    else:
+        print(f"[{level}] {message}")
+
+
+def degrees_to_radians(degrees):
+    """将角度转换为弧度"""
+    return degrees * math.pi / 180
+
+
+def radians_to_degrees(radians):
+    """将弧度转换为角度"""
+    return radians * 180 / math.pi
+
+
+def collide_rect(rect1, rect2):
+    """
+    检测两个矩形是否碰撞
+    rect 格式为 (x, y, width, height)
+    """
+    return (rect1[0] < rect2[0] + rect2[2] and
+            rect1[0] + rect1[2] > rect2[0] and
+            rect1[1] < rect2[1] + rect2[3] and
+            rect1[1] + rect1[3] > rect2[1])
+
+
+def calculate_checksum(data):
+    """计算数据的简单校验和"""
+    if isinstance(data, dict):
+        # 对字典进行排序以确保一致性
+        return hash(tuple(sorted((k, calculate_checksum(v)) for k, v in data.items())))
+    elif isinstance(data, list) or isinstance(data, tuple):
+        return hash(tuple(calculate_checksum(item) for item in data))
+    else:
+        return hash(data)
+
+
+# 单元测试
+def test_utils():
+    """工具函数模块的单元测试"""
+    # 测试距离计算
+    assert distance((0, 0), (3, 4)) == 5
+
+    # 测试向量操作
+    angle = math.pi / 4  # 45度
+    vec = vector_from_angle(angle, 1.0)
+    assert abs(vec[0] - 0.7071) < 0.0001
+    assert abs(vec[1] - 0.7071) < 0.0001
+
+    # 测试clamp函数
+    assert clamp(5, 0, 10) == 5
+    assert clamp(-1, 0, 10) == 0
+    assert clamp(11, 0, 10) == 10
+
+    # 测试矩形函数
+    rect = rect_from_center((50, 50), 20, 20)
+    assert rect == (40, 40, 20, 20)
+    assert is_point_in_rect((45, 45), rect)
+    assert not is_point_in_rect((30, 30), rect)
+
+    print("All utils tests passed!")
+
+
+if __name__ == "__main__":
+    test_utils()
+
+文件名: client/game_engine/bullet.py
+文件内容
+======================================================================
+# bullet.py
+"""
+子弹类模块：定义游戏中的子弹对象及其行为
+"""
+
+import pygame
+import math
+from common.constants import *
+from common.utils import vector_from_angle
+from common.deterministic_engine import DeterministicPhysics
+
+
+class Bullet:
+    """
+    子弹类：表示游戏中的子弹对象
+
+    主要功能：
+    - 初始化子弹（位置、方向等）
+    - 子弹移动
+    - 碰撞检测
+    - 绘制子弹
+    """
+
+    def __init__(self, position, direction, owner_id=None):
+        """初始化子弹对象"""
+        self.x, self.y = position
+        self.direction = direction  # 方向角度，0表示向右，90表示向下，以此类推
+        self.owner_id = owner_id  # 发射子弹的坦克ID
+
+        # 子弹属性
+        self.speed = BULLET_SPEED
+        self.damage = BULLET_DAMAGE
+        self.radius = BULLET_RADIUS
+        self.lifetime = BULLET_LIFETIME * 1000  # 转换为毫秒
+        self.color = COLOR_WHITE
+        self.active = True  # 子弹是否活跃
+
+        # 计算子弹速度向量
+        angle_rad = math.radians(self.direction)
+        self.velocity = vector_from_angle(angle_rad, self.speed)
+
+        # 子弹碰撞盒（圆形）
+        self.rect = (self.x - self.radius, self.y - self.radius,
+                     self.radius * 2, self.radius * 2)
+
+        # 记录创建时间
+        self.creation_time = pygame.time.get_ticks()
+
+    def update(self, delta_time, obstacles, tanks):
+        """
+        更新子弹位置，检测碰撞
+        返回碰撞结果（是否命中，命中的对象）
+        """
+        if not self.active:
+            return None, None
+
+        # 检查子弹是否超过生命周期
+        current_time = pygame.time.get_ticks()
+        if current_time - self.creation_time > self.lifetime:
+            self.active = False
+            return None, None
+
+        # 更新位置，使用 delta_time 使移动更平滑
+        self.x += self.velocity[0] * delta_time * 60  # 乘以60使速度在60FPS下保持一致
+        self.y += self.velocity[1] * delta_time * 60
+
+        # 更新碰撞盒
+        self.rect = (self.x - self.radius, self.y - self.radius,
+                     self.radius * 2, self.radius * 2)
+
+        # 检查是否超出屏幕
+        if (self.x < 0 or self.x > SCREEN_WIDTH or
+                self.y < 0 or self.y > SCREEN_HEIGHT):
+            self.active = False
+            return None, None
+
+        # 检查与障碍物的碰撞
+        for obstacle in obstacles:
+            if getattr(obstacle, 'destroyed', False):
+                continue
+            if DeterministicPhysics.check_collision(self.rect, obstacle.rect):
+                self.active = False
+                obstacle.take_damage(self.damage)
+                return "obstacle", obstacle
+
+        # 检查与坦克的碰撞(排除自己的坦克)
+        for tank in tanks:
+            if tank and tank.tank_id != self.owner_id and not getattr(tank, 'is_destroyed', False):  # 不检查与发射者或已销毁坦克的碰撞
+                if DeterministicPhysics.check_collision(self.rect, tank.rect):
+                    self.active = False
+                    tank.take_damage(self.damage)  # 这会触发视觉效果
+                    return "tank", tank
+
+        return None, None
+
+    def draw(self, surface):
+        """绘制子弹"""
+        if not self.active:
+            return
+
+        # 绘制子弹（圆形）
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), self.radius)
+
+    def serialize(self):
+        """将子弹状态序列化为字典"""
+        return {
+            'position': (self.x, self.y),
+            'direction': self.direction,
+            'owner_id': self.owner_id,
+            'velocity': self.velocity,
+            'active': self.active,
+            'creation_time': self.creation_time
+        }
+
+    @classmethod
+    def deserialize(cls, data):
+        """从序列化数据创建子弹"""
+        bullet = cls(data['position'], data['direction'], data['owner_id'])
+        bullet.velocity = data['velocity']
+        bullet.active = data['active']
+        bullet.creation_time = data['creation_time']
+        return bullet
+
+文件名: client/game_engine/collision.py
+文件内容
+======================================================================
+# collision.py
+"""
+碰撞系统模块：处理游戏中的碰撞检测
+"""
+
+from common.deterministic_engine import DeterministicPhysics
+
+
+class CollisionSystem:
+    """
+    碰撞系统：处理游戏中的碰撞检测
+
+    主要功能：
+    - 检测坦克与障碍物的碰撞
+    - 检测坦克与坦克的碰撞
+    - 检测子弹与物体的碰撞
+    """
+
+    @staticmethod
+    def check_tank_obstacle_collision(tank, obstacles):
+        """
+        检查坦克与障碍物的碰撞
+
+        Args:
+            tank: 坦克对象
+            obstacles: 障碍物列表
+
+        Returns:
+            碰撞的障碍物列表
+        """
+        collided_obstacles = []
+
+        # 使用稍小的碰撞盒，允许坦克通过狭窄空间
+        collision_shrink = 2  # 每边缩小的像素数
+        tank_collision_box = (
+            tank.x - tank.width / 2 + collision_shrink,
+            tank.y - tank.height / 2 + collision_shrink,
+            tank.width - 2 * collision_shrink,
+            tank.height - 2 * collision_shrink
+        )
+
+        for obstacle in obstacles:
+            if getattr(obstacle, 'destroyed', False):
+                continue
+            if DeterministicPhysics.check_collision(tank_collision_box, obstacle.rect):
+                collided_obstacles.append(obstacle)
+
+        return collided_obstacles
+
+    @staticmethod
+    def check_tank_tank_collision(tank, other_tanks):
+        """
+        检查坦克与其他坦克的碰撞
+
+        Args:
+            tank: 待检查的坦克
+            other_tanks: 其他坦克列表
+
+        Returns:
+            (是否碰撞, 碰撞的坦克)
+        """
+        # 使用稍小的碰撞盒，允许坦克更容易通过
+        collision_shrink = 1  # 每边缩小的像素数
+        tank_collision_box = (
+            tank.x - tank.width / 2 + collision_shrink,
+            tank.y - tank.height / 2 + collision_shrink,
+            tank.width - 2 * collision_shrink,
+            tank.height - 2 * collision_shrink
+        )
+
+        for other_tank in other_tanks:
+            if other_tank == tank or getattr(other_tank, 'is_destroyed', False):
+                continue
+
+            other_tank_collision_box = (
+                other_tank.x - other_tank.width / 2 + collision_shrink,
+                other_tank.y - other_tank.height / 2 + collision_shrink,
+                other_tank.width - 2 * collision_shrink,
+                other_tank.height - 2 * collision_shrink
+            )
+
+            if DeterministicPhysics.check_collision(tank_collision_box, other_tank_collision_box):
+                return True, other_tank
+
+        return False, None
+
+    @staticmethod
+    def check_bullet_obstacle_collision(bullet, obstacles):
+        """
+        检查子弹与障碍物的碰撞
+
+        Args:
+            bullet: 子弹对象
+            obstacles: 障碍物列表
+
+        Returns:
+            (是否碰撞, 碰撞的障碍物)
+        """
+        if not bullet.active:
+            return False, None
+
+        for obstacle in obstacles:
+            if getattr(obstacle, 'destroyed', False):
+                continue
+            if DeterministicPhysics.check_collision(bullet.rect, obstacle.rect):
+                return True, obstacle
+
+        return False, None
+
+    @staticmethod
+    def check_bullet_tank_collision(bullet, tanks):
+        """
+        检查子弹与坦克的碰撞
+
+        Args:
+            bullet: 子弹对象
+            tanks: 坦克列表
+
+        Returns:
+            (是否碰撞, 碰撞的坦克)
+        """
+        if not bullet.active:
+            return False, None
+
+        for tank in tanks:
+            # 跳过子弹所有者的坦克和已销毁的坦克
+            if tank.tank_id == bullet.owner_id or getattr(tank, 'is_destroyed', False):
+                continue
+
+            if DeterministicPhysics.check_collision(bullet.rect, tank.rect):
+                return True, tank
+
+        return False, None
+
+    @staticmethod
+    def check_screen_bounds(position, size, screen_width, screen_height, margin=0):
+        """
+        检查对象是否超出屏幕边界
+
+        Args:
+            position: 对象位置 (x, y) - 中心点
+            size: 对象大小 (width, height)
+            screen_width, screen_height: 屏幕尺寸
+            margin: 边界余量
+
+        Returns:
+            是否在屏幕边界内
+        """
+        x, y = position
+        width, height = size
+
+        half_width = width / 2
+        half_height = height / 2
+
+        return (
+                x - half_width + margin >= 0 and
+                x + half_width - margin <= screen_width and
+                y - half_height + margin >= 0 and
+                y + half_height - margin <= screen_height
+        )
+
+    @staticmethod
+    def handle_tank_collision(moving_tank, other_tanks):
+        """
+        处理坦克与其他坦克的碰撞
+
+        Args:
+            moving_tank: 移动中的坦克
+            other_tanks: 其他坦克列表
+
+        Returns:
+            是否发生碰撞
+        """
+        collision, collided_tank = CollisionSystem.check_tank_tank_collision(
+            moving_tank, other_tanks
+        )
+
+        if collision:
+            # 撤销移动
+            moving_tank.x = moving_tank.prev_x
+            moving_tank.y = moving_tank.prev_y
+
+            # 更新碰撞盒
+            moving_tank.collision_box = (
+                moving_tank.x - moving_tank.width / 2,
+                moving_tank.y - moving_tank.height / 2,
+                moving_tank.width,
+                moving_tank.height
+            )
+
+            # 更新视觉矩形
+            moving_tank.update_image()
+
+            # 显示碰撞效果
+            moving_tank.show_collision_effect()
+            collided_tank.show_collision_effect()
+
+            return True
+
+        return False
+
+文件名: client/game_engine/map.py
+文件内容
+======================================================================
+# map.py
+"""
+地图类模块：定义游戏地图和障碍物的生成与管理
+"""
+
+import pygame
+import random
+import os
+import json
+import math
+from common.constants import *
+from client.game_engine.obstacle import WallObstacle, BrickObstacle
+from common.deterministic_engine import DeterministicRandom, DeterministicPhysics
+
+
+class Map:
+    """
+    地图类：管理游戏地图和障碍物
+
+    主要功能：
+    - 地图生成（随机和预设）
+    - 障碍物管理
+    - 出生点管理
+    - 地图渲染
+    """
+
+    def __init__(self, map_name=None):
+        """初始化地图对象"""
+        self.screen_width = SCREEN_WIDTH
+        self.screen_height = SCREEN_HEIGHT
+        self.grid_size = GRID_SIZE
+        self.map_width = MAP_WIDTH
+        self.map_height = MAP_HEIGHT
+
+        # 使用确定性随机生成器
+        self.random = DeterministicRandom()
+
+        # 地图网格
+        self.grid = [[0 for _ in range(self.map_width)] for _ in range(self.map_height)]
+
+        # 障碍物列表
+        self.obstacles = []
+
+        # 出生点列表
+        self.spawn_points = []
+
+        # 如果提供了地图名称，则加载，否则生成默认地图
+        if map_name:
+            self.load_map(map_name)
+        else:
+            self.generate_default_map()
+
+    def generate_default_map(self):
+        """生成默认地图"""
+        # 创建边界墙
+        self._create_boundaries()
+
+        # 随机生成一些砖块
+        self._generate_random_bricks(15)
+
+        # 初始化默认出生点 - 确保它们远离障碍物
+        self._initialize_default_spawn_points()
+
+    def generate_random_map(self, seed=None):
+        """生成随机地图"""
+        if seed is not None:
+            self.random.seed(seed)
+
+        # 清空已有障碍物
+        self.obstacles = []
+        self.spawn_points = []
+
+        # 创建边界墙
+        self._create_boundaries()
+
+        # 随机生成砖块
+        self._generate_random_bricks(30)  # 生成30个随机砖块
+
+        # 随机生成一些墙
+        self._generate_random_walls(10)  # 生成10个随机墙
+
+        # 初始化默认出生点
+        self._initialize_default_spawn_points()
+
+    def _initialize_default_spawn_points(self):
+        """初始化默认出生点，确保它们远离障碍物"""
+        # 清空现有出生点
+        self.spawn_points = []
+
+        # 定义基本的四个角落出生点位置，远离墙体
+        # 确保离边界墙足够远，防止卡墙
+        wall_offset = self.grid_size * 2.5
+        potential_points = [
+            (wall_offset, wall_offset),  # 左上角
+            (self.screen_width - wall_offset, wall_offset),  # 右上角
+            (wall_offset, self.screen_height - wall_offset),  # 左下角
+            (self.screen_width - wall_offset, self.screen_height - wall_offset)  # 右下角
+        ]
+
+        # 检查每个点是否安全（不与障碍物重叠），如果不安全则调整
+        for point in potential_points:
+            safe_point = self._find_safe_spawn_point(point[0], point[1])
+            if safe_point:
+                self.spawn_points.append(safe_point)
+
+        # 如果没有找到足够的安全点，添加中心区域的点
+        if len(self.spawn_points) < 4:
+            center_x = self.screen_width / 2
+            center_y = self.screen_height / 2
+            for offset in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
+                center_point = (center_x + offset[0] * 50, center_y + offset[1] * 50)
+                safe_point = self._find_safe_spawn_point(center_point[0], center_point[1])
+                if safe_point and safe_point not in self.spawn_points:
+                    self.spawn_points.append(safe_point)
+                    if len(self.spawn_points) >= 4:
+                        break
+
+    def _find_safe_spawn_point(self, base_x, base_y, max_attempts=20):
+        """
+        在基准点周围找到一个安全的出生点
+
+        Args:
+            base_x, base_y: 基准点坐标
+            max_attempts: 最大尝试次数
+
+        Returns:
+            安全的出生点坐标，如果找不到则返回None
+        """
+        # 首先检查原始点是否安全
+        if self._is_safe_spawn_location(base_x, base_y, TANK_WIDTH, TANK_HEIGHT):
+            return (base_x, base_y)
+
+        # 原始点不安全，开始在周围搜索
+        search_radius = self.grid_size
+
+        for attempt in range(max_attempts):
+            # 增加搜索半径
+            search_radius += self.grid_size * 0.5
+
+            # 在当前半径范围内随机选择点
+            angle = self.random.uniform(0, 2 * math.pi)
+            distance = self.random.uniform(0, search_radius)
+            x = base_x + distance * math.cos(angle)
+            y = base_y + distance * math.sin(angle)
+
+            # 确保点在地图边界内
+            x = max(TANK_WIDTH, min(self.screen_width - TANK_WIDTH, x))
+            y = max(TANK_HEIGHT, min(self.screen_height - TANK_HEIGHT, y))
+
+            # 检查这个点是否安全
+            if self._is_safe_spawn_location(x, y, TANK_WIDTH, TANK_HEIGHT):
+                return (x, y)
+
+        # 如果找不到安全点，返回None
+        print(f"Warning: Could not find safe spawn point near ({base_x}, {base_y})")
+        return None
+
+    def _is_safe_spawn_location(self, x, y, width, height, margin=5):
+        """
+        检查给定位置是否适合坦克出生
+
+        Args:
+            x, y: 位置坐标（中心点）
+            width, height: 实体尺寸
+            margin: 额外边距
+
+        Returns:
+            如果位置安全返回True
+        """
+        # 创建稍微小一点的坦克碰撞盒
+        # 减小安全检查的边距，确保出生点不会过于受限
+        tank_rect = (
+            x - width / 2,
+            y - height / 2,
+            width,
+            height
+        )
+
+        # 检查是否与任何障碍物重叠
+        for obstacle in self.obstacles:
+            if DeterministicPhysics.check_collision(tank_rect, obstacle.rect):
+                return False
+
+        # 检查是否太靠近地图边缘
+        if (x - width / 2 - margin < 0 or
+                x + width / 2 + margin > self.screen_width or
+                y - height / 2 - margin < 0 or
+                y + height / 2 + margin > self.screen_height):
+            return False
+
+        # 安全点
+        return True
+
+    def _add_additional_spawn_points(self, count):
+        """添加额外的出生点"""
+        attempts = 0
+        max_attempts = 100
+        added = 0
+
+        while added < count and attempts < max_attempts:
+            attempts += 1
+
+            # 随机选择地图上的一点
+            x = self.random.randint(self.grid_size * 2, self.screen_width - self.grid_size * 2)
+            y = self.random.randint(self.grid_size * 2, self.screen_height - self.grid_size * 2)
+
+            # 检查是否安全，且距离现有出生点足够远
+            if self._is_safe_spawn_location(x, y, TANK_WIDTH, TANK_HEIGHT):
+                # 检查与现有出生点的距离
+                too_close = False
+                for point in self.spawn_points:
+                    if DeterministicPhysics.distance((x, y), point) < TANK_WIDTH * 3:
+                        too_close = True
+                        break
+
+                if not too_close:
+                    self.spawn_points.append((x, y))
+                    added += 1
+
+    def load_map(self, map_name):
+        """从文件加载地图"""
+        map_path = os.path.join(MAPS_DIR, f"{map_name}.json")
+        try:
+            with open(map_path, 'r') as f:
+                map_data = json.load(f)
+
+            # 清空已有障碍物
+            self.obstacles = []
+            self.spawn_points = []
+
+            # 加载障碍物
+            for obstacle in map_data.get('obstacles', []):
+                obstacle_type = obstacle.get('type')
+                x, y = obstacle.get('x'), obstacle.get('y')
+                width, height = obstacle.get('width', OBSTACLE_SIZE), obstacle.get('height', OBSTACLE_SIZE)
+
+                if obstacle_type == 'wall':
+                    self.obstacles.append(WallObstacle(x, y, width, height))
+                elif obstacle_type == 'brick':
+                    self.obstacles.append(BrickObstacle(x, y, width, height))
+
+            # 加载出生点
+            self.spawn_points = map_data.get('spawn_points', [])
+
+            # 如果没有出生点或出生点不安全，重新生成
+            if not self.spawn_points or not self._validate_spawn_points():
+                self._initialize_default_spawn_points()
+
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"Error loading map {map_name}: {e}")
+            # 如果加载失败，生成默认地图
+            self.generate_default_map()
+
+    def _validate_spawn_points(self):
+        """验证所有出生点是否安全"""
+        safe_points = []
+        for point in self.spawn_points:
+            x, y = point[0], point[1]
+            if self._is_safe_spawn_location(x, y, TANK_WIDTH, TANK_HEIGHT):
+                safe_points.append(point)
+            else:
+                # 尝试找到附近的安全点
+                safe_point = self._find_safe_spawn_point(x, y)
+                if safe_point:
+                    safe_points.append(safe_point)
+
+        # 更新出生点列表
+        self.spawn_points = safe_points
+
+        # 如果没有足够的安全点，返回False
+        return len(self.spawn_points) >= 4
+
+    def save_map(self, map_name):
+        """保存地图到文件"""
+        map_data = {
+            'obstacles': [],
+            'spawn_points': self.spawn_points
+        }
+
+        # 保存障碍物数据
+        for obstacle in self.obstacles:
+            obstacle_type = 'wall' if isinstance(obstacle, WallObstacle) else 'brick'
+            map_data['obstacles'].append({
+                'type': obstacle_type,
+                'x': obstacle.x,
+                'y': obstacle.y,
+                'width': obstacle.width,
+                'height': obstacle.height
+            })
+
+        # 确保地图目录存在
+        os.makedirs(MAPS_DIR, exist_ok=True)
+
+        # 保存到文件
+        map_path = os.path.join(MAPS_DIR, f"{map_name}.json")
+        with open(map_path, 'w') as f:
+            json.dump(map_data, f, indent=4)
+
+    def _create_boundaries(self):
+        """创建地图边界墙"""
+        wall_size = OBSTACLE_SIZE
+
+        # 上边界
+        for x in range(0, self.screen_width, wall_size):
+            self.obstacles.append(WallObstacle(x, 0))
+
+        # 下边界
+        for x in range(0, self.screen_width, wall_size):
+            self.obstacles.append(WallObstacle(x, self.screen_height - wall_size))
+
+        # 左边界
+        for y in range(wall_size, self.screen_height - wall_size, wall_size):
+            self.obstacles.append(WallObstacle(0, y))
+
+        # 右边界
+        for y in range(wall_size, self.screen_height - wall_size, wall_size):
+            self.obstacles.append(WallObstacle(self.screen_width - wall_size, y))
+
+    def _generate_random_bricks(self, count):
+        """随机生成砖块"""
+        for _ in range(count):
+            # 随机选择网格位置
+            grid_x = self.random.randint(1, self.map_width - 2)
+            grid_y = self.random.randint(1, self.map_height - 2)
+
+            # 转换为像素坐标
+            x = grid_x * self.grid_size
+            y = grid_y * self.grid_size
+
+            # 创建砖块
+            self.obstacles.append(BrickObstacle(x, y))
+
+    def _generate_random_walls(self, count):
+        """随机生成墙"""
+        for _ in range(count):
+            # 随机选择网格位置
+            grid_x = self.random.randint(1, self.map_width - 2)
+            grid_y = self.random.randint(1, self.map_height - 2)
+
+            # 转换为像素坐标
+            x = grid_x * self.grid_size
+            y = grid_y * self.grid_size
+
+            # 创建墙
+            self.obstacles.append(WallObstacle(x, y))
+
+    def get_spawn_points(self):
+        """获取所有可用的出生点位置"""
+        if not self.spawn_points:
+            self._initialize_default_spawn_points()
+        return self.spawn_points
+
+    def get_random_spawn_point(self, used_points=None):
+        """
+        获取一个随机出生点，避免与已使用的点重叠
+
+        Args:
+            used_points: 已经被使用的出生点列表，避免重复
+
+        Returns:
+            随机选择的出生点坐标元组 (x, y)
+        """
+        # 获取所有可用的出生点
+        spawn_points = self.get_spawn_points()
+
+        if used_points is None:
+            used_points = []
+
+        # 过滤掉已使用的出生点
+        available_points = [point for point in spawn_points if point not in used_points]
+
+        # 如果没有可用出生点，尝试创建新点
+        if not available_points:
+            # 选择一个已使用的点作为基准，寻找附近的安全位置
+            base_point = used_points[-1] if used_points else (self.screen_width // 2, self.screen_height // 2)
+            new_point = self._find_safe_spawn_point(base_point[0], base_point[1])
+
+            if new_point:
+                return new_point
+            else:
+                # 如果仍然找不到安全点，选择基准点并警告
+                print("Warning: Using a potentially unsafe spawn point")
+                return base_point
+
+        # 从可用出生点中随机选择一个
+        return self.random.choice(available_points)
+
+    def _check_overlap(self, point, rect, margin=0):
+        """
+        检查点与矩形是否重叠（考虑边距）
+
+        Args:
+            point: 要检查的点 (x, y)
+            rect: 矩形 (x, y, width, height)
+            margin: 额外边距
+
+        Returns:
+            如果点与矩形（加上边距）重叠，返回True
+        """
+        x, y = point
+        rx, ry, rw, rh = rect
+
+        # 扩展矩形边界
+        rx -= margin
+        ry -= margin
+        rw += 2 * margin
+        rh += 2 * margin
+
+        return (rx <= x <= rx + rw) and (ry <= y <= ry + rh)
+
+    def update(self):
+        """更新地图状态"""
+        # 移除被销毁的障碍物
+        obstacles_to_remove = []
+        for obstacle in self.obstacles:
+            if getattr(obstacle, 'destroyed', False):
+                obstacles_to_remove.append(obstacle)
+
+        for obstacle in obstacles_to_remove:
+            try:
+                self.obstacles.remove(obstacle)
+            except ValueError:
+                pass  # 如果障碍物已被移除，忽略错误
+
+    def draw(self, surface):
+        """绘制地图"""
+        # 绘制背景
+        surface.fill(COLOR_BLACK)
+
+        # 绘制障碍物
+        for obstacle in self.obstacles:
+            obstacle.draw(surface)
+
+    def get_obstacles_at(self, grid_x, grid_y):
+        """获取指定网格位置的障碍物"""
+        x = grid_x * self.grid_size
+        y = grid_y * self.grid_size
+
+        obstacles_at_position = []
+        for obstacle in self.obstacles:
+            if (obstacle.x == x and obstacle.y == y):
+                obstacles_at_position.append(obstacle)
+
+        return obstacles_at_position
+
+    def clear_obstacles(self):
+        """清空所有障碍物"""
+        self.obstacles = []
+
+    def add_obstacle(self, obstacle):
+        """添加障碍物"""
+        self.obstacles.append(obstacle)
+
+    def remove_obstacle(self, obstacle):
+        """移除障碍物"""
+        if obstacle in self.obstacles:
+            self.obstacles.remove(obstacle)
+
+    def add_spawn_point(self, x, y):
+        """添加出生点"""
+        self.spawn_points.append((x, y))
+
+    def get_size(self):
+        """获取地图尺寸"""
+        return (self.screen_width, self.screen_height)
+
+文件名: client/game_engine/obstacle.py
+文件内容
+======================================================================
+# obstacle.py
+"""
+障碍物类模块：定义游戏中各种障碍物对象
+"""
+
+import pygame
+import math
+import os
+from common.constants import *
+from common.utils import current_time_ms
+from client.game_engine.particle_system import particle_system
+
+
+class Obstacle:
+    """障碍物基类"""
+
+    def __init__(self, x, y, width, height, health=None):
+        """初始化障碍物"""
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.health = health if health is not None else float('inf')
+        self.max_health = self.health
+        self.rect = (x, y, width, height)
+        self.image = None
+        self.destroyed = False
+
+        # 受伤状态
+        self.hit_time = 0
+        self.hit_flash_duration = 500  # 受伤闪烁持续0.5秒
+        self.is_hit = False
+        self.alpha = 255  # 完全不透明
+        self.flash_interval = 100  # 闪烁间隔(毫秒)
+        self.last_flash_time = 0
+        self.flash_state = False
+
+        # 爆炸效果
+        self.is_exploding = False
+        self.explosion_start_time = 0
+        self.explosion_duration = 800  # 爆炸动画持续0.8秒
+        self.explosion_particle_group_id = None  # 存储粒子组ID
+
+    def take_damage(self, damage):
+        """受到伤害，返回是否销毁"""
+        if self.destroyed or self.is_exploding:
+            return True
+
+        if self.health != float('inf'):
+            self.health -= damage
+
+            # 设置受伤状态
+            self.is_hit = True
+            self.hit_time = current_time_ms()
+
+            if self.health <= 0:
+                self.health = 0
+                self.start_explosion()
+                return True
+
+        return False
+
+    def start_explosion(self):
+        """开始爆炸效果"""
+        self.is_exploding = True
+        self.explosion_start_time = current_time_ms()
+
+        # 根据障碍物类型选择颜色
+        debris_colors = []
+        if isinstance(self, BrickObstacle):
+            debris_colors = [COLOR_BROWN, (139, 69, 19), (160, 82, 45)]  # 棕色系
+        else:
+            debris_colors = [COLOR_GRAY, (100, 100, 100), (70, 70, 70)]  # 灰色系
+
+        # 创建碎片粒子效果
+        self.explosion_particle_group_id = particle_system.create_debris(
+            x=self.x + self.width / 2,
+            y=self.y + self.height / 2,
+            color_palette=debris_colors,
+            count=20,
+            min_speed=0.5,
+            max_speed=3,
+            min_size=1,
+            max_size=4,
+            duration=self.explosion_duration,
+            gravity=0.1
+        )
+
+    def update(self, delta_time):
+        """更新障碍物状态"""
+        current_time = current_time_ms()
+
+        # 处理爆炸效果
+        if self.is_exploding:
+            elapsed = current_time - self.explosion_start_time
+            if elapsed > self.explosion_duration:
+                self.is_exploding = False
+                self.destroyed = True
+                self.explosion_particle_group_id = None
+            # 粒子由粒子系统更新，不需要在这里更新
+
+        # 处理受伤闪烁效果
+        if self.is_hit and not self.destroyed and not self.is_exploding:
+            elapsed = current_time - self.hit_time
+
+            # 受伤闪烁效果结束
+            if elapsed > self.hit_flash_duration:
+                self.is_hit = False
+                self.alpha = 255  # 恢复完全不透明
+            else:
+                # 控制闪烁频率
+                if current_time - self.last_flash_time > self.flash_interval:
+                    self.last_flash_time = current_time
+                    self.flash_state = not self.flash_state
+
+                # 设置透明度
+                self.alpha = 150 if self.flash_state else 255
+
+        # 低生命值持续闪烁
+        if self.health != float(
+                'inf') and self.health <= self.max_health * 0.3 and not self.is_hit and not self.is_exploding and not self.destroyed:
+            if current_time - self.last_flash_time > self.flash_interval * 1.5:  # 低生命闪烁更慢
+                self.last_flash_time = current_time
+                self.flash_state = not self.flash_state
+
+            # 设置较轻的闪烁效果
+            self.alpha = 200 if self.flash_state else 255
+
+    def draw(self, surface):
+        """绘制障碍物"""
+        if self.destroyed:
+            return  # 已销毁，不绘制
+
+        if self.is_exploding:
+            # 爆炸粒子由粒子系统绘制，这里仅绘制淡出的障碍物
+            elapsed_ratio = (current_time_ms() - self.explosion_start_time) / self.explosion_duration
+            fade_alpha = int(255 * (1 - elapsed_ratio))
+            if fade_alpha > 0 and self.image:
+                image_copy = self.image.copy()
+                image_copy.set_alpha(fade_alpha)
+                surface.blit(image_copy, self.rect)
+        else:
+            # 绘制带透明度的障碍物
+            if self.image:
+                # 创建带透明度的图像副本
+                image_copy = self.image.copy()
+                image_copy.set_alpha(self.alpha)
+                # 绘制
+                surface.blit(image_copy, self.rect)
+            else:
+                # 如果没有图像，绘制一个简单的矩形
+                rect_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+                rect_surface.fill((*pygame.Color(self.get_color())[:3], self.alpha))
+                surface.blit(rect_surface, self.rect)
+
+    def get_color(self):
+        """获取障碍物颜色（子类覆盖）"""
+        return COLOR_GRAY
+
+    def get_position(self):
+        """获取障碍物位置"""
+        return (self.x, self.y)
+
+    def get_size(self):
+        """获取障碍物尺寸"""
+        return (self.width, self.height)
+
+    def get_center(self):
+        """获取障碍物中心点"""
+        return (self.x + self.width / 2, self.y + self.height / 2)
+
+    def serialize(self):
+        """将障碍物状态序列化为字典"""
+        return {
+            'type': self.__class__.__name__,
+            'x': self.x,
+            'y': self.y,
+            'width': self.width,
+            'height': self.height,
+            'health': self.health,
+            'destroyed': self.destroyed
+        }
+
+
+class WallObstacle(Obstacle):
+    """不可破坏的墙"""
+
+    def __init__(self, x, y, width=OBSTACLE_SIZE, height=OBSTACLE_SIZE):
+        super().__init__(x, y, width, height, health=WALL_HEALTH)
+        self.load_image()
+
+    def load_image(self):
+        """加载墙的图像"""
+        try:
+            image_path = os.path.join(IMAGES_DIR, "wall.png")
+            if os.path.exists(image_path):
+                self.image = pygame.image.load(image_path).convert_alpha()
+                self.image = pygame.transform.scale(self.image, (self.width, self.height))
+            else:
+                # 如果图像文件不存在，创建一个简单的表面
+                self.image = pygame.Surface((self.width, self.height))
+                self.image.fill(COLOR_GRAY)
+        except pygame.error as e:
+            print(f"Error loading wall image: {e}")
+            # 如果加载失败，创建一个默认图像
+            self.image = pygame.Surface((self.width, self.height))
+            self.image.fill(COLOR_GRAY)
+
+    def get_color(self):
+        return COLOR_GRAY
+
+
+class BrickObstacle(Obstacle):
+    """可破坏的砖墙"""
+
+    def __init__(self, x, y, width=OBSTACLE_SIZE, height=OBSTACLE_SIZE):
+        super().__init__(x, y, width, height, health=BRICK_HEALTH)
+        self.load_image()
+
+    def load_image(self):
+        """加载砖墙的图像"""
+        try:
+            image_path = os.path.join(IMAGES_DIR, "brick.png")
+            if os.path.exists(image_path):
+                self.image = pygame.image.load(image_path).convert_alpha()
+                self.image = pygame.transform.scale(self.image, (self.width, self.height))
+            else:
+                # 如果图像文件不存在，创建一个简单的表面
+                self.image = pygame.Surface((self.width, self.height))
+                self.image.fill(COLOR_BROWN)
+        except pygame.error as e:
+            print(f"Error loading brick image: {e}")
+            # 如果加载失败，创建一个默认图像
+            self.image = pygame.Surface((self.width, self.height))
+            self.image.fill(COLOR_BROWN)
+
+    def get_color(self):
+        return COLOR_BROWN
+
+文件名: client/game_engine/particle_system.py
+文件内容
+======================================================================
+# particle_system.py
+"""
+粒子系统模块：用于创建和管理粒子效果
+"""
+
+import pygame
+import math
+import random
+from common.constants import *
+from common.utils import current_time_ms
+
+
+class Particle:
+    """单个粒子类"""
+
+    def __init__(self, x, y, dx, dy, size, color, life_duration, gravity=0):
+        """初始化粒子"""
+        self.x = x
+        self.y = y
+        self.dx = dx  # x方向速度
+        self.dy = dy  # y方向速度
+        self.size = size  # 初始大小
+        self.original_size = size  # 保存初始大小用于计算缩放
+        self.color = color  # (r, g, b) 颜色元组
+        self.creation_time = current_time_ms()
+        self.life_duration = life_duration  # 生命周期(毫秒)
+        self.gravity = gravity  # 重力影响
+        self.alpha = 255  # 透明度
+        self.active = True  # 粒子是否活跃
+
+    def update(self, delta_time):
+        """更新粒子状态"""
+        if not self.active:
+            return
+
+        # 计算已过去时间
+        current_time = current_time_ms()
+        elapsed = current_time - self.creation_time
+
+        # 检查是否超过生命周期
+        if elapsed >= self.life_duration:
+            self.active = False
+            return
+
+        # 计算生命周期比例(0-1之间)
+        life_ratio = elapsed / self.life_duration
+
+        # 更新位置
+        seconds = delta_time  # 转换为秒
+        self.x += self.dx * seconds * 60  # 速度标准化为60FPS
+        self.y += self.dy * seconds * 60
+
+        # 应用重力
+        self.dy += self.gravity * seconds
+
+        # 随着生命周期更新大小
+        size_factor = 1.0 - life_ratio  # 线性缩小
+        self.size = max(0.1, self.original_size * size_factor)
+
+        # 随着生命周期更新透明度
+        self.alpha = int(255 * (1.0 - life_ratio))
+
+    def draw(self, surface):
+        """绘制粒子"""
+        if not self.active or self.size <= 0:
+            return
+
+        # 对于非常小的粒子，确保至少绘制1像素
+        size = max(1, int(self.size))
+
+        # 创建带有透明度的颜色
+        color_with_alpha = (*self.color, self.alpha)
+
+        # 创建表面并绘制粒子
+        if size <= 1:
+            # 单像素直接绘制
+            surface.set_at((int(self.x), int(self.y)), color_with_alpha)
+        else:
+            # 创建带透明度的圆形粒子
+            particle_surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(particle_surface, color_with_alpha, (size, size), size)
+            surface.blit(particle_surface, (int(self.x - size), int(self.y - size)))
+
+
+class ParticleSystem:
+    """粒子系统类"""
+
+    def __init__(self):
+        """初始化粒子系统"""
+        self.particle_groups = {}  # 存储多个粒子组，键为组ID
+        self.next_group_id = 0  # 下一个可用的组ID
+
+    def create_explosion(self, x, y, color_palette, count=30, min_speed=1, max_speed=5,
+                         min_size=2, max_size=6, duration=1000, gravity=0):
+        """
+        创建爆炸效果
+
+        Args:
+            x, y: 爆炸中心坐标
+            color_palette: 颜色列表，粒子将随机选择其中的颜色
+            count: 粒子数量
+            min_speed, max_speed: 粒子速度范围
+            min_size, max_size: 粒子大小范围
+            duration: 爆炸持续时间(毫秒)
+            gravity: 重力系数，正值使粒子下落，负值使粒子上升
+
+        Returns:
+            粒子组ID，可用于检查效果是否完成
+        """
+        particles = []
+
+        for _ in range(count):
+            # 随机角度、速度和大小
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(min_speed, max_speed)
+            size = random.randint(min_size, max_size)
+
+            # 随机选择颜色
+            color = random.choice(color_palette)
+
+            # 计算速度向量
+            dx = math.cos(angle) * speed
+            dy = math.sin(angle) * speed
+
+            # 创建粒子，生命周期随机化以增加多样性
+            life = random.uniform(0.7, 1.0) * duration
+            particle = Particle(x, y, dx, dy, size, color, life, gravity)
+            particles.append(particle)
+
+        # 将粒子组添加到系统中
+        group_id = self.next_group_id
+        self.particle_groups[group_id] = particles
+        self.next_group_id += 1
+
+        return group_id
+
+    def create_debris(self, x, y, color_palette, count=15, min_speed=0.5, max_speed=3,
+                      min_size=1, max_size=4, duration=800, gravity=0.1):
+        """
+        创建碎片效果，类似爆炸但带有重力
+
+        参数同create_explosion，但默认值针对碎片效果进行了优化
+        """
+        return self.create_explosion(x, y, color_palette, count, min_speed, max_speed,
+                                     min_size, max_size, duration, gravity)
+
+    def create_spark(self, x, y, direction_angle, spread_angle=30, color_palette=None,
+                     count=10, min_speed=3, max_speed=7, min_size=1, max_size=3, duration=500):
+        """
+        创建火花效果，在指定方向上喷射粒子
+
+        Args:
+            x, y: 火花起始坐标
+            direction_angle: 火花方向角度(度)
+            spread_angle: 扩散角度(度)，粒子将在direction_angle±spread_angle的范围内生成
+            color_palette: 颜色列表，默认为红黄色系
+            其他参数同create_explosion
+        """
+        if color_palette is None:
+            color_palette = [COLOR_RED, COLOR_YELLOW, COLOR_ORANGE]
+
+        particles = []
+
+        for _ in range(count):
+            # 计算随机角度(弧度)，在指定方向上扩散
+            angle_offset = random.uniform(-spread_angle, spread_angle)
+            angle_rad = math.radians(direction_angle + angle_offset)
+
+            speed = random.uniform(min_speed, max_speed)
+            size = random.uniform(min_size, max_size)
+
+            # 随机选择颜色
+            color = random.choice(color_palette)
+
+            # 计算速度向量
+            dx = math.cos(angle_rad) * speed
+            dy = math.sin(angle_rad) * speed
+
+            # 创建粒子，火花通常寿命较短
+            life = random.uniform(0.5, 1.0) * duration
+            particle = Particle(x, y, dx, dy, size, color, life)
+            particles.append(particle)
+
+        # 将粒子组添加到系统中
+        group_id = self.next_group_id
+        self.particle_groups[group_id] = particles
+        self.next_group_id += 1
+
+        return group_id
+
+    def is_group_active(self, group_id):
+        """检查粒子组是否仍然活跃"""
+        if group_id not in self.particle_groups:
+            return False
+
+        # 如果组中有任何活跃粒子，则组是活跃的
+        return any(particle.active for particle in self.particle_groups[group_id])
+
+    def remove_group(self, group_id):
+        """移除粒子组"""
+        if group_id in self.particle_groups:
+            del self.particle_groups[group_id]
+
+    def update(self, delta_time):
+        """更新所有粒子组"""
+        # 记录要移除的不活跃组
+        groups_to_remove = []
+
+        for group_id, particles in self.particle_groups.items():
+            # 更新每个粒子
+            for particle in particles:
+                particle.update(delta_time)
+
+            # 过滤掉不活跃的粒子
+            self.particle_groups[group_id] = [p for p in particles if p.active]
+
+            # 如果组内没有活跃粒子，标记为移除
+            if not self.particle_groups[group_id]:
+                groups_to_remove.append(group_id)
+
+        # 移除不活跃的组
+        for group_id in groups_to_remove:
+            self.remove_group(group_id)
+
+    def draw(self, surface):
+        """绘制所有粒子组"""
+        for particles in self.particle_groups.values():
+            for particle in particles:
+                particle.draw(surface)
+
+
+# 创建全局粒子系统实例
+particle_system = ParticleSystem()
+
+文件名: client/game_engine/tank.py
+文件内容
+======================================================================
+# tank.py
+"""
+坦克类模块：定义游戏中坦克对象的属性和行为
+"""
+
+import pygame
+import math
+import os
+from common.constants import *
+from common.utils import vector_from_angle, current_time_ms, rect_from_center
+from common.deterministic_engine import DeterministicPhysics
+from client.game_engine.particle_system import particle_system
+
+
+class Tank:
+    """
+    坦克类：表示游戏中的坦克对象
+
+    主要功能：
+    - 初始化坦克（位置、朝向、颜色等）
+    - 坦克移动控制
+    - 坦克射击
+    - 处理伤害和碰撞
+    - 绘制坦克
+    """
+
+    # 定义方向常量，与按键对应
+    RIGHT = 0
+    DOWN = 90
+    LEFT = 180
+    UP = 270
+
+    def __init__(self, x, y, color, tank_id=None, is_player=False):
+        """初始化坦克对象"""
+        self.x = x
+        self.y = y
+        self.prev_x = x  # 存储前一帧位置
+        self.prev_y = y  # 存储前一帧位置
+        self.color = color
+        self.tank_id = tank_id or f"tank_{id(self)}"
+        self.is_player = is_player
+
+        # 坦克属性
+        self.width = TANK_WIDTH
+        self.height = TANK_HEIGHT
+        self.speed = TANK_SPEED
+        self.rotation_speed = TANK_ROTATION_SPEED
+        self.health = TANK_HEALTH
+        self.max_health = TANK_HEALTH  # 添加最大生命值记录
+        self.ammo = TANK_AMMO
+        self.last_shot_time = 0
+        self.reload_time = TANK_RELOAD_TIME
+
+        # 方向和运动
+        self.direction = self.RIGHT  # 初始朝右
+        self.moving = False
+        self.rotating = 0  # -1 左转, 0 不转, 1 右转
+
+        # 加载坦克图像
+        self.original_image = None
+        self.image = None
+        self.load_image()
+
+        # 碰撞盒
+        self.collision_margin = 0  # 移除任何额外边距
+        self.rect = (
+            x - self.width / 2,
+            y - self.height / 2,
+            self.width,
+            self.height
+        )
+        self.collision_box = (
+            x - self.width / 2,
+            y - self.height / 2,
+            self.width,
+            self.height
+        )
+
+        # 受伤状态
+        self.hit_time = 0
+        self.hit_flash_duration = 1000  # 受伤闪烁持续1秒
+        self.is_hit = False
+        self.alpha = 255  # 完全不透明
+        self.flash_interval = 100  # 闪烁间隔(毫秒)
+        self.last_flash_time = 0
+        self.flash_state = False
+
+        # 爆炸效果
+        self.is_exploding = False
+        self.explosion_start_time = 0
+        self.explosion_duration = 1000  # 爆炸动画持续1秒
+        self.explosion_particle_group_id = None  # 存储粒子组ID
+        self.is_destroyed = False
+
+    def load_image(self):
+        """加载坦克图像"""
+        try:
+            # 尝试加载图像，如果图像文件不存在，则创建一个简单的表面
+            image_path = os.path.join(IMAGES_DIR, f"tank_{self.color}.png")
+            if os.path.exists(image_path):
+                self.original_image = pygame.image.load(image_path).convert_alpha()
+                self.original_image = pygame.transform.scale(self.original_image, (self.width, self.height))
+            else:
+                # 创建简单的矩形表面
+                self.original_image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+
+                # 绘制坦克主体（方形）
+                tank_color = COLOR_RED if self.color == 'red' else COLOR_BLUE if self.color == 'blue' else COLOR_GREEN if self.color == 'green' else COLOR_YELLOW
+                pygame.draw.rect(self.original_image, tank_color, (0, 0, self.width, self.height))
+
+                # 绘制坦克炮塔（圆形）
+                pygame.draw.circle(self.original_image, COLOR_DARK_GREEN,
+                                   (self.width // 2, self.height // 2), self.width // 3)
+
+                # 绘制坦克炮管（向右方向的矩形）
+                pygame.draw.rect(self.original_image, COLOR_DARK_GREEN,
+                                 (self.width // 2, self.height // 2 - 2, self.width // 2, 4))
+
+            # 初始方向设为向右
+            self.direction = self.RIGHT
+            self.update_image()
+
+        except pygame.error as e:
+            print(f"Error loading tank image: {e}")
+            # 如果加载失败，创建一个默认图像
+            self.original_image = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+            pygame.draw.rect(self.original_image, self.color, (0, 0, self.width, self.height))
+            self.update_image()
+
+    def update_image(self):
+        """更新坦克图像的旋转"""
+        # 将角度转换为旋转值，pygame旋转是逆时针的，我们需要负值
+        self.image = pygame.transform.rotate(self.original_image, -self.direction)
+
+        # 获取旋转后的矩形并确保中心点不变
+        new_rect = self.image.get_rect(center=(self.x, self.y))
+
+        # 注意：这里只更新图像的绘制矩形，不影响碰撞盒
+        self.rect = (new_rect.x, new_rect.y, new_rect.width, new_rect.height)
+
+        # 单独更新碰撞盒，保持碰撞盒为正方形
+        self.collision_box = (
+            self.x - self.width / 2,
+            self.y - self.height / 2,
+            self.width,
+            self.height
+        )
+
+    def set_direction(self, direction):
+        """设置坦克方向"""
+        self.direction = direction
+        self.update_image()
+
+    def move_in_direction(self, direction, obstacles=None):
+        """向指定方向移动坦克"""
+        self.set_direction(direction)
+        self.moving = True
+        return self.move(obstacles=obstacles)
+
+    def move(self, direction=None, obstacles=None):
+        """移动坦克，处理碰撞"""
+        if not self.moving or self.is_exploding or self.is_destroyed:
+            return False
+
+        # 保存当前位置，以便在碰撞时回退
+        self.prev_x = self.x
+        self.prev_y = self.y
+
+        # 计算移动向量
+        angle_rad = math.radians(self.direction)
+        dx, dy = vector_from_angle(angle_rad, self.speed)
+
+        # 先尝试更新位置
+        new_x = self.x + dx
+        new_y = self.y + dy
+
+        # 边界检查，留出一点余量避免卡边界
+        margin = 2
+        new_x = max(self.width / 2 + margin, min(SCREEN_WIDTH - self.width / 2 - margin, new_x))
+        new_y = max(self.height / 2 + margin, min(SCREEN_HEIGHT - self.height / 2 - margin, new_y))
+
+        # 分别检查X和Y方向的移动，实现滑墙效果
+        can_move_x = True
+        can_move_y = True
+
+        if obstacles:
+            # 使用稍小的碰撞盒检查，允许坦克通过狭窄空间
+            # 缩小的碰撞盒仅用于碰撞检测
+            collision_shrink = 2  # 每边缩小的像素数
+
+            # 检查X方向移动
+            test_rect_x = (
+                new_x - self.width / 2 + collision_shrink,
+                self.y - self.height / 2 + collision_shrink,
+                self.width - 2 * collision_shrink,
+                self.height - 2 * collision_shrink
+            )
+
+            for obstacle in obstacles:
+                if getattr(obstacle, 'destroyed', False):
+                    continue
+                if DeterministicPhysics.check_collision(test_rect_x, obstacle.rect):
+                    can_move_x = False
+                    break
+
+            # 检查Y方向移动
+            test_rect_y = (
+                self.x - self.width / 2 + collision_shrink,
+                new_y - self.height / 2 + collision_shrink,
+                self.width - 2 * collision_shrink,
+                self.height - 2 * collision_shrink
+            )
+
+            for obstacle in obstacles:
+                if getattr(obstacle, 'destroyed', False):
+                    continue
+                if DeterministicPhysics.check_collision(test_rect_y, obstacle.rect):
+                    can_move_y = False
+                    break
+
+        # 应用移动，考虑滑墙
+        if can_move_x:
+            self.x = new_x
+        if can_move_y:
+            self.y = new_y
+
+        # 更新碰撞矩形和绘制矩形
+        # 注意视觉表现的矩形和碰撞检测的矩形可能稍有不同
+        self.update_image()  # 这会更新self.rect和self.collision_box
+
+        # 确保碰撞盒也被更新
+        self.collision_box = (
+            self.x - self.width / 2,
+            self.y - self.height / 2,
+            self.width,
+            self.height
+        )
+
+        return can_move_x or can_move_y  # 只要有一个方向能移动就返回True
+
+    def can_shoot(self, current_time):
+        """检查是否可以射击"""
+        return (self.ammo > 0 and
+                (current_time - self.last_shot_time) >= self.reload_time and
+                not self.is_exploding and not self.is_destroyed)
+
+    def shoot(self, current_time):
+        """射击，返回子弹的初始位置和方向"""
+        if not self.can_shoot(current_time):
+            return None
+
+        # 减少弹药
+        self.ammo -= 1
+        self.last_shot_time = current_time
+
+        # 计算子弹的初始位置（坦克炮管前端）
+        angle_rad = math.radians(self.direction)
+        bullet_offset = vector_from_angle(angle_rad, self.width / 2)
+        bullet_x = self.x + bullet_offset[0]
+        bullet_y = self.y + bullet_offset[1]
+
+        return (bullet_x, bullet_y, self.direction)
+
+    def take_damage(self, damage):
+        """受到伤害，返回是否死亡"""
+        if self.is_exploding or self.is_destroyed:
+            return True  # 已经在爆炸或已销毁
+
+        self.health -= damage
+
+        # 设置受伤状态
+        self.is_hit = True
+        self.hit_time = current_time_ms()
+        self.flash_state = True  # 强制开始闪烁
+        self.alpha = 128  # 立即应用透明度
+
+        # 检查是否死亡
+        if self.health <= 0:
+            self.health = 0
+            self.start_explosion()
+            return True
+        return False
+
+    def show_collision_effect(self):
+        """显示坦克碰撞效果"""
+        # 轻微闪烁以指示碰撞
+        self.is_hit = True
+        self.hit_time = current_time_ms()
+        self.hit_flash_duration = 300  # 短时间闪烁
+        self.alpha = 180  # 稍微降低透明度
+
+    def start_explosion(self):
+        """开始爆炸效果"""
+        self.is_exploding = True
+        self.explosion_start_time = current_time_ms()
+
+        # 创建爆炸粒子效果
+        explosion_colors = [COLOR_RED, COLOR_YELLOW, COLOR_ORANGE]
+        self.explosion_particle_group_id = particle_system.create_explosion(
+            x=self.x,
+            y=self.y,
+            color_palette=explosion_colors,
+            count=30,
+            min_speed=1,
+            max_speed=5,
+            min_size=2,
+            max_size=6,
+            duration=self.explosion_duration
+        )
+
+        # 同时创建一些碎片效果
+        debris_colors = []
+        if self.color == 'red':
+            debris_colors = [(200, 0, 0), (150, 0, 0), (100, 0, 0)]
+        elif self.color == 'blue':
+            debris_colors = [(0, 0, 200), (0, 0, 150), (0, 0, 100)]
+        elif self.color == 'green':
+            debris_colors = [(0, 200, 0), (0, 150, 0), (0, 100, 0)]
+        elif self.color == 'yellow':
+            debris_colors = [(200, 200, 0), (150, 150, 0), (100, 100, 0)]
+        else:
+            debris_colors = [COLOR_GRAY, COLOR_DARK_GREEN, COLOR_BROWN]
+
+        particle_system.create_debris(
+            x=self.x,
+            y=self.y,
+            color_palette=debris_colors,
+            count=15,
+            min_speed=0.5,
+            max_speed=3,
+            min_size=1,
+            max_size=4,
+            duration=800,
+            gravity=0.1
+        )
+
+    def update(self, delta_time):
+        """更新坦克状态"""
+        current_time = current_time_ms()
+
+        # 处理爆炸效果
+        if self.is_exploding:
+            elapsed = current_time - self.explosion_start_time
+            if elapsed > self.explosion_duration:
+                self.is_exploding = False
+                self.is_destroyed = True
+                self.explosion_particle_group_id = None
+            # 粒子由粒子系统更新，不需要在这里更新
+
+        # 处理受伤闪烁效果
+        if self.is_hit:
+            elapsed = current_time - self.hit_time
+
+            # 受伤闪烁效果结束
+            if elapsed > self.hit_flash_duration:
+                self.is_hit = False
+                self.alpha = 255  # 恢复完全不透明
+            else:
+                # 控制闪烁频率
+                if current_time - self.last_flash_time > self.flash_interval:
+                    self.last_flash_time = current_time
+                    self.flash_state = not self.flash_state
+
+                # 设置透明度
+                self.alpha = 128 if self.flash_state else 255
+
+        # 坦克生命值低时持续闪烁
+        if self.health <= self.max_health * 0.3 and not self.is_hit and not self.is_exploding and not self.is_destroyed:
+            if current_time - self.last_flash_time > self.flash_interval * 2:  # 低生命闪烁更慢
+                self.last_flash_time = current_time
+                self.flash_state = not self.flash_state
+
+            # 设置较轻的闪烁效果
+            self.alpha = 180 if self.flash_state else 255
+
+    def draw(self, surface):
+        """在屏幕上绘制坦克"""
+        if self.is_destroyed:
+            return  # 坦克已销毁，不绘制
+
+        if self.is_exploding:
+            # 爆炸粒子由粒子系统绘制，这里仅绘制淡出的坦克
+            if self.image:
+                # 计算淡出效果
+                elapsed_ratio = min(1.0, (current_time_ms() - self.explosion_start_time) / self.explosion_duration)
+                fade_alpha = int(255 * (1 - elapsed_ratio))
+
+                if fade_alpha > 0:
+                    # 创建带透明度的图像副本
+                    image_copy = self.image.copy()
+                    image_copy.set_alpha(fade_alpha)
+                    surface.blit(image_copy, self.rect)
+        else:
+            # 绘制带透明度的坦克
+            if self.image:
+                # 创建带透明度的图像副本
+                image_copy = self.image.copy()
+                # 设置透明度
+                image_copy.set_alpha(self.alpha)
+                # 绘制
+                surface.blit(image_copy, self.rect)
+            else:
+                # 如果没有图像，绘制一个简单的矩形
+                rect_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+                rect_color = COLOR_RED if self.color == 'red' else COLOR_BLUE if self.color == 'blue' else COLOR_GREEN if self.color == 'green' else COLOR_YELLOW
+                rect_surface.fill((*pygame.Color(rect_color)[:3], self.alpha))
+                surface.blit(rect_surface, self.rect)
+
+    def serialize(self):
+        """将坦克状态序列化为字典"""
+        return {
+            'tank_id': self.tank_id,
+            'x': self.x,
+            'y': self.y,
+            'direction': self.direction,
+            'health': self.health,
+            'ammo': self.ammo,
+            'color': self.color,
+            'is_player': self.is_player,
+            'last_shot_time': self.last_shot_time,
+            'is_destroyed': self.is_destroyed
+        }
+
+    @classmethod
+    def deserialize(cls, data, color):
+        """从序列化数据创建坦克"""
+        tank = cls(
+            x=data['x'],
+            y=data['y'],
+            color=data['color'] if 'color' in data else color,
+            tank_id=data['tank_id'],
+            is_player=data['is_player']
+        )
+        tank.direction = data['direction']
+        tank.health = data['health']
+        tank.ammo = data['ammo']
+        tank.last_shot_time = data['last_shot_time']
+        if 'is_destroyed' in data and data['is_destroyed']:
+            tank.is_destroyed = True
+        tank.update_image()  # 更新图像以反映新方向
+        return tank
+
+    def apply_input(self, input_data):
+        """应用输入数据更新坦克状态"""
+        if not input_data:
+            return
+
+        # 处理移动输入
+        if 'movement' in input_data:
+            movement = input_data['movement']
+
+            if movement == 'up':
+                self.set_direction(self.UP)
+                self.moving = True
+            elif movement == 'right':
+                self.set_direction(self.RIGHT)
+                self.moving = True
+            elif movement == 'down':
+                self.set_direction(self.DOWN)
+                self.moving = True
+            elif movement == 'left':
+                self.set_direction(self.LEFT)
+                self.moving = True
+            elif movement == 'stop':
+                self.moving = False
+
+    def calculate_checksum(self):
+        """计算坦克状态的校验和"""
+        state = (
+            self.x, self.y, self.direction, self.health,
+            self.ammo, self.tank_id, self.moving
+        )
+        return hash(state)
+
+文件名: client/test/test_tank_movement.py
+文件内容
+======================================================================
+# client/tests/test_tank_movement.py
+"""
+测试坦克移动和旋转是否正常工作
+"""
+
+import pygame
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+from common.constants import *
+from client.game_engine.tank import Tank
+from client.game_engine.map import Map
+from client.game_engine.obstacle import WallObstacle
+
+
+def main():
+    """测试坦克移动和旋转"""
+    pygame.init()
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Tank Movement Test")
+    clock = pygame.time.Clock()
+
+    # 创建地图
+    game_map = Map()
+    game_map.generate_random_map(seed=42)
+
+    # 创建坦克在地图中央
+    tank = Tank(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2, 'blue', is_player=True)
+
+    # 显示当前方向和位置的函数
+    font = pygame.font.SysFont(None, 24)
+
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+
+        # 处理按键
+        keys = pygame.key.get_pressed()
+
+        # 记录移动前的位置
+        old_x, old_y = tank.x, tank.y
+
+        # 重置移动标志
+        tank.moving = False
+
+        # 处理移动和方向
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            tank.move_in_direction(Tank.UP, game_map.obstacles)
+        elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            tank.move_in_direction(Tank.RIGHT, game_map.obstacles)
+        elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            tank.move_in_direction(Tank.DOWN, game_map.obstacles)
+        elif keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            tank.move_in_direction(Tank.LEFT, game_map.obstacles)
+
+        # 清屏
+        screen.fill(COLOR_BLACK)
+
+        # 绘制地图
+        game_map.draw(screen)
+
+        # 绘制坦克
+        tank.draw(screen)
+
+        # 显示信息
+        direction_text = font.render(f"Direction: {tank.direction}°", True, COLOR_WHITE)
+        screen.blit(direction_text, (10, 10))
+
+        position_text = font.render(f"Position: ({tank.x:.1f}, {tank.y:.1f})", True, COLOR_WHITE)
+        screen.blit(position_text, (10, 30))
+
+        moved_text = font.render(
+            f"Moved: {tank.x - old_x:.1f}, {tank.y - old_y:.1f}",
+            True, COLOR_WHITE
+        )
+        screen.blit(moved_text, (10, 50))
+
+        # 添加控制提示
+        controls_text = font.render("WASD: Move | ESC: Quit", True, COLOR_WHITE)
+        screen.blit(controls_text, (10, SCREEN_HEIGHT - 30))
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+    pygame.quit()
+    sys.exit()
+
+
+if __name__ == "__main__":
+    main()
+
+文件名: client/main.py
+文件内容
+======================================================================
+# main.py
+"""
+客户端主模块：游戏的入口点（单机游戏原型版本）
+"""
+
+import pygame
+import sys
+import os
+import math
+import random
+from common.constants import *
+from common.utils import current_time_ms, ensure_dir, vector_from_angle
+from common.deterministic_engine import DeterministicPhysics, DeterministicRandom
+from client.game_engine.tank import Tank
+from client.game_engine.bullet import Bullet
+from client.game_engine.map import Map
+from client.game_engine.obstacle import WallObstacle, BrickObstacle
+from client.game_engine.collision import CollisionSystem
+from client.game_engine.particle_system import particle_system
+
+
+class GameClient:
+    """
+    游戏客户端：管理整个游戏流程（单机版）
+
+    主要功能：
+    - 初始化游戏组件
+    - 处理游戏状态
+    - 管理游戏循环
+    - 处理用户输入
+    """
+
+    def __init__(self):
+        """初始化游戏客户端"""
+        # 初始化pygame
+        pygame.init()
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption("Tank Battle - Prototype")
+        self.clock = pygame.time.Clock()
+
+        # 确保资源目录存在
+        ensure_dir(RESOURCES_DIR)
+        ensure_dir(IMAGES_DIR)
+        ensure_dir(SOUNDS_DIR)
+        ensure_dir(MAPS_DIR)
+
+        # 游戏状态
+        self.running = False
+        self.paused = False
+
+        # 游戏对象
+        self.map = None
+        self.player_tank = None
+        self.enemy_tanks = []
+        self.bullets = []
+        self.game_over = False
+        self.winner = None
+
+        # 字体
+        self.font = pygame.font.SysFont(None, 36)
+
+        # 调试标志
+        self.DEBUG = True  # 设置为True开启调试信息
+
+    def start(self):
+        """启动游戏"""
+        self.running = True
+
+        # 加载地图
+        self.map = Map()
+        self.map.generate_random_map(seed=42)
+
+        # 确保地图有安全的出生点
+        if len(self.map.get_spawn_points()) < 4:
+            print("Warning: Not enough safe spawn points. Regenerating map...")
+            self.map.generate_random_map(seed=43)  # 尝试不同的种子
+
+        # 用于跟踪已使用的出生点
+        used_spawn_points = []
+
+        # 创建玩家坦克
+        spawn_point = self.map.get_random_spawn_point(used_spawn_points)
+        if spawn_point:
+            used_spawn_points.append(spawn_point)
+            self.player_tank = Tank(spawn_point[0], spawn_point[1], 'blue', is_player=True)
+            print(f"Created player tank at position: {spawn_point}")
+        else:
+            print("Error: Could not find a safe spawn point for player tank")
+            # 使用一个固定的安全位置
+            self.player_tank = Tank(self.map.screen_width // 4, self.map.screen_height // 4, 'blue', is_player=True)
+
+        # 创建敌方坦克
+        self.enemy_tanks = []
+        tank_colors = ['red', 'green', 'yellow']  # 定义不同敌方坦克的颜色
+
+        for i in range(len(tank_colors)):
+            enemy_spawn = self.map.get_random_spawn_point(used_spawn_points)
+            if enemy_spawn:
+                used_spawn_points.append(enemy_spawn)
+                enemy_tank = Tank(enemy_spawn[0], enemy_spawn[1], tank_colors[i])
+                self.enemy_tanks.append(enemy_tank)
+                print(f"Created {tank_colors[i]} tank at position: {enemy_spawn}")
+            else:
+                # 如果找不到安全的出生点，暂时不添加这个敌方坦克
+                print(f"Warning: Could not find a safe spawn point for {tank_colors[i]} tank")
+
+        # 重置游戏状态
+        self.bullets = []
+        self.game_over = False
+        self.winner = None
+
+        # 验证并修复坦克位置
+        self._validate_tank_positions()
+
+        # 调试：检查坦克碰撞
+        self._debug_check_tank_collisions()
+
+    def _validate_tank_positions(self):
+        """验证坦克位置，确保没有重叠"""
+        all_tanks = [self.player_tank] + self.enemy_tanks
+
+        for i, tank1 in enumerate(all_tanks):
+            for j, tank2 in enumerate(all_tanks):
+                if i != j:  # 不与自己比较
+                    # 计算两个坦克中心点之间的距离
+                    distance = math.sqrt((tank1.x - tank2.x) ** 2 + (tank1.y - tank2.y) ** 2)
+
+                    # 如果距离小于两个坦克宽度之和的一半，认为它们重叠
+                    min_distance = (tank1.width + tank2.width) / 2
+
+                    if distance < min_distance:
+                        print(f"Warning: Tank {i} ({tank1.color}) overlaps with Tank {j} ({tank2.color})")
+                        print(f"  Tank {i} position: ({tank1.x}, {tank1.y})")
+                        print(f"  Tank {j} position: ({tank2.x}, {tank2.y})")
+                        print(f"  Distance: {distance}, Minimum required: {min_distance}")
+
+                        # 可以在这里尝试修复重叠问题
+                        # 例如，稍微移动一个坦克
+                        offset = min_distance - distance + 5  # 额外5像素的间距
+                        angle = math.atan2(tank2.y - tank1.y, tank2.x - tank1.x)
+
+                        # 将tank2向远离tank1的方向移动
+                        tank2.x += math.cos(angle) * offset
+                        tank2.y += math.sin(angle) * offset
+
+                        # 更新tank2的碰撞盒
+                        tank2.rect = (
+                            tank2.x - tank2.width / 2,
+                            tank2.y - tank2.height / 2,
+                            tank2.width,
+                            tank2.height
+                        )
+
+                        print(f"  Fixed: Tank {j} moved to ({tank2.x}, {tank2.y})")
+
+    def _debug_check_tank_collisions(self):
+        """调试函数：检查坦克是否与障碍物重叠"""
+        if not self.DEBUG:
+            return
+
+        # 检查玩家坦克
+        player_collisions = []
+
+        if self.player_tank:
+            # 使用标准碰撞盒检查
+            tank_rect = (
+                self.player_tank.x - self.player_tank.width / 2,
+                self.player_tank.y - self.player_tank.height / 2,
+                self.player_tank.width,
+                self.player_tank.height
+            )
+
+            for obstacle in self.map.obstacles:
+                if DeterministicPhysics.check_collision(tank_rect, obstacle.rect):
+                    player_collisions.append(obstacle)
+
+            if player_collisions:
+                print(f"WARNING: Player tank collides with {len(player_collisions)} obstacles")
+                print(f"Player position: ({self.player_tank.x}, {self.player_tank.y})")
+                for obs in player_collisions[:3]:  # 只显示前3个
+                    print(f"  Obstacle at ({obs.x}, {obs.y})")
+
+        # 检查敌方坦克
+        for i, tank in enumerate(self.enemy_tanks):
+            enemy_collisions = []
+
+            # 使用标准碰撞盒检查
+            tank_rect = (
+                tank.x - tank.width / 2,
+                tank.y - tank.height / 2,
+                tank.width,
+                tank.height
+            )
+
+            for obstacle in self.map.obstacles:
+                if DeterministicPhysics.check_collision(tank_rect, obstacle.rect):
+                    enemy_collisions.append(obstacle)
+
+            if enemy_collisions:
+                print(f"WARNING: Enemy tank {i} ({tank.color}) collides with {len(enemy_collisions)} obstacles")
+                print(f"Enemy position: ({tank.x}, {tank.y})")
+                for obs in enemy_collisions[:3]:  # 只显示前3个
+                    print(f"  Obstacle at ({obs.x}, {obs.y})")
+
+        # 添加测试代码：检查地图上狭窄通道的宽度
+        if self.DEBUG:
+            print("\nDebug: Map passages analysis")
+
+            # 检查水平方向的通道
+            for y in range(1, self.map.map_height - 1):
+                row_obstacles = []
+                for x in range(self.map.map_width):
+                    grid_obstacles = self.map.get_obstacles_at(x, y)
+                    if grid_obstacles:
+                        row_obstacles.append((x, y))
+
+                # 检查通道宽度
+                if row_obstacles:
+                    passage_widths = []
+                    last_x = -1
+                    for x, y in sorted(row_obstacles):
+                        if last_x != -1:
+                            passage_width = x - last_x - 1
+                            if 0 < passage_width < 3:  # 检查较窄的通道
+                                passage_widths.append((last_x, x, passage_width))
+                        last_x = x
+
+                    if passage_widths:
+                        print(f"Row {y}: Narrow passages detected")
+                        for start_x, end_x, width in passage_widths:
+                            print(f"  Passage between x={start_x} and x={end_x}, width={width} cells")
+
+            # 检查垂直方向的通道
+            for x in range(1, self.map.map_width - 1):
+                col_obstacles = []
+                for y in range(self.map.map_height):
+                    grid_obstacles = self.map.get_obstacles_at(x, y)
+                    if grid_obstacles:
+                        col_obstacles.append((x, y))
+
+                # 检查通道宽度
+                if col_obstacles:
+                    passage_widths = []
+                    last_y = -1
+                    for x, y in sorted(col_obstacles, key=lambda pos: pos[1]):
+                        if last_y != -1:
+                            passage_width = y - last_y - 1
+                            if 0 < passage_width < 3:  # 检查较窄的通道
+                                passage_widths.append((last_y, y, passage_width))
+                        last_y = y
+
+                    if passage_widths:
+                        print(f"Column {x}: Narrow passages detected")
+                        for start_y, end_y, width in passage_widths:
+                            print(f"  Passage between y={start_y} and y={end_y}, width={width} cells")
+
+    def handle_events(self):
+        """处理游戏事件和用户输入"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.running = False
+                elif event.key == pygame.K_p:
+                    self.paused = not self.paused
+                elif event.key == pygame.K_r and self.game_over:
+                    self.start()  # 游戏结束时按R重新开始
+                elif event.key == pygame.K_d and event.mod & pygame.KMOD_CTRL:
+                    self.DEBUG = not self.DEBUG  # Ctrl+D切换调试模式
+
+                # 玩家坦克控制
+                if not self.paused and not self.game_over and self.player_tank:
+                    if event.key == pygame.K_SPACE:
+                        self.handle_player_shoot()
+
+            elif event.type == pygame.KEYUP:
+                # 处理松开按键
+                pass
+
+        # 处理按键状态
+        if not self.paused and not self.game_over and self.player_tank:
+            keys = pygame.key.get_pressed()
+            self.handle_player_movement(keys)
+
+    def handle_player_movement(self, keys):
+        """处理玩家坦克移动"""
+        if not self.player_tank or self.player_tank.is_destroyed:
+            return
+
+        # 重置移动标志
+        self.player_tank.moving = False
+
+        # 获取障碍物列表
+        obstacles = self.map.obstacles
+
+        # 处理移动，尝试各个方向
+        moved = False
+
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            moved = self.player_tank.move_in_direction(Tank.UP, obstacles)
+        elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            moved = self.player_tank.move_in_direction(Tank.RIGHT, obstacles)
+        elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            moved = self.player_tank.move_in_direction(Tank.DOWN, obstacles)
+        elif keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            moved = self.player_tank.move_in_direction(Tank.LEFT, obstacles)
+
+        # 如果玩家坦克移动了，检查与其他坦克的碰撞
+        if moved:
+            CollisionSystem.handle_tank_collision(self.player_tank, self.enemy_tanks)
+
+    def handle_player_shoot(self):
+        """处理玩家坦克射击"""
+        if not self.player_tank or self.player_tank.is_destroyed:
+            return
+
+        current_time = current_time_ms()
+        bullet_info = self.player_tank.shoot(current_time)
+
+        if bullet_info:
+            bullet_x, bullet_y, direction = bullet_info
+            bullet = Bullet((bullet_x, bullet_y), direction, self.player_tank.tank_id)
+            self.bullets.append(bullet)
+
+    def update(self, delta_time=1 / 60):
+        """更新游戏状态"""
+        if self.paused or self.game_over:
+            return
+
+        # 更新粒子系统
+        particle_system.update(delta_time)
+
+        # 更新地图
+        self.map.update()
+
+        # 更新玩家坦克
+        if self.player_tank and not self.player_tank.is_destroyed:
+            self.player_tank.update(delta_time)
+
+        # 更新障碍物
+        for obstacle in self.map.obstacles:
+            if hasattr(obstacle, 'update'):
+                obstacle.update(delta_time)
+
+        # 更新敌方坦克
+        for tank in self.enemy_tanks[:]:
+            if not tank.is_destroyed:
+                tank.update(delta_time)
+
+                # 这里可以添加简单的AI逻辑控制敌方坦克移动
+                # 如果实现了敌方AI移动，需要检查碰撞
+                # if tank.moving:
+                #     CollisionSystem.handle_tank_collision(tank, [self.player_tank] + [t for t in self.enemy_tanks if t != tank])
+
+            # 移除被销毁的坦克
+            if tank.is_destroyed:
+                self.enemy_tanks.remove(tank)
+
+        # 更新子弹
+        current_bullets = []
+        for bullet in self.bullets:
+            hit_type, hit_obj = bullet.update(delta_time, self.map.obstacles,
+                                              [self.player_tank] + self.enemy_tanks)
+
+            # 如果子弹击中了物体，创建火花效果
+            if not bullet.active and hit_type:
+                # 创建火花效果
+                spark_angle = (bullet.direction + 180) % 360  # 火花向相反方向发散
+                particle_system.create_spark(
+                    x=bullet.x,
+                    y=bullet.y,
+                    direction_angle=spark_angle,
+                    spread_angle=30,
+                    count=8,
+                    duration=300
+                )
+
+            if bullet.active:
+                current_bullets.append(bullet)
+
+        self.bullets = current_bullets
+
+        # 检查游戏是否结束
+        if self.player_tank and (self.player_tank.health <= 0 or self.player_tank.is_destroyed):
+            if not self.game_over:  # 防止重复设置
+                self.game_over = True
+                self.winner = "Enemy"
+        elif not self.enemy_tanks:
+            if not self.game_over:  # 防止重复设置
+                self.game_over = True
+                self.winner = "Player"
+
+    def _draw_debug_collision_boxes(self, surface):
+        """绘制碰撞盒，用于调试"""
+        if not self.DEBUG:
+            return
+
+        # 绘制玩家坦克碰撞盒
+        if self.player_tank and not self.player_tank.is_destroyed:
+            # 标准碰撞盒
+            tank_rect = (
+                self.player_tank.x - self.player_tank.width / 2,
+                self.player_tank.y - self.player_tank.height / 2,
+                self.player_tank.width,
+                self.player_tank.height
+            )
+            pygame.draw.rect(surface, COLOR_RED, tank_rect, 1)
+
+            # 缩小的碰撞盒
+            collision_shrink = 2
+            shrunk_rect = (
+                self.player_tank.x - self.player_tank.width / 2 + collision_shrink,
+                self.player_tank.y - self.player_tank.height / 2 + collision_shrink,
+                self.player_tank.width - 2 * collision_shrink,
+                self.player_tank.height - 2 * collision_shrink
+            )
+            pygame.draw.rect(surface, COLOR_GREEN, shrunk_rect, 1)
+
+        # 绘制敌方坦克碰撞盒
+        for tank in self.enemy_tanks:
+            if not tank.is_destroyed:
+                # 标准碰撞盒
+                tank_rect = (
+                    tank.x - tank.width / 2,
+                    tank.y - tank.height / 2,
+                    tank.width,
+                    tank.height
+                )
+                pygame.draw.rect(surface, COLOR_RED, tank_rect, 1)
+
+                # 缩小的碰撞盒
+                collision_shrink = 2
+                shrunk_rect = (
+                    tank.x - tank.width / 2 + collision_shrink,
+                    tank.y - tank.height / 2 + collision_shrink,
+                    tank.width - 2 * collision_shrink,
+                    tank.height - 2 * collision_shrink
+                )
+                pygame.draw.rect(surface, COLOR_GREEN, shrunk_rect, 1)
+
+        # 绘制障碍物碰撞盒
+        for obstacle in self.map.obstacles:
+            pygame.draw.rect(surface, COLOR_BLUE, obstacle.rect, 1)
+
+    def render(self):
+        """渲染游戏画面"""
+        # 绘制地图和障碍物
+        self.map.draw(self.screen)
+
+        # 绘制子弹
+        for bullet in self.bullets:
+            bullet.draw(self.screen)
+
+        # 绘制坦克
+        if self.player_tank and not self.player_tank.is_destroyed:
+            self.player_tank.draw(self.screen)
+
+        for tank in self.enemy_tanks:
+            tank.draw(self.screen)
+
+        # 绘制粒子效果（要在其他元素之后绘制以确保正确的层次关系）
+        particle_system.draw(self.screen)
+
+        # 调试模式：绘制碰撞盒
+        if self.DEBUG:
+            self._draw_debug_collision_boxes(self.screen)
+
+        # 绘制UI
+        self._draw_ui()
+
+        # 如果游戏暂停，显示暂停信息
+        if self.paused:
+            pause_text = self.font.render("PAUSED - Press P to continue", True, COLOR_WHITE)
+            text_rect = pause_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2))
+            self.screen.blit(pause_text, text_rect)
+
+        # 如果游戏结束，显示游戏结束信息
+        if self.game_over:
+            self._draw_game_over()
+
+        pygame.display.flip()
+
+    def _draw_ui(self):
+        """绘制游戏UI"""
+        if not self.player_tank:
+            return
+
+        # 绘制玩家生命值
+        health_text = self.font.render(f"Health: {self.player_tank.health}", True, COLOR_WHITE)
+        self.screen.blit(health_text, (10, 10))
+
+        # 绘制玩家弹药
+        ammo_text = self.font.render(f"Ammo: {self.player_tank.ammo}", True, COLOR_WHITE)
+        self.screen.blit(ammo_text, (10, 50))
+
+        # 绘制敌人数量
+        enemies_text = self.font.render(f"Enemies: {len(self.enemy_tanks)}", True, COLOR_WHITE)
+        self.screen.blit(enemies_text, (SCREEN_WIDTH - 150, 10))
+
+        # 调试信息：显示当前方向
+        direction_text = self.font.render(f"Direction: {self.player_tank.direction}°", True, COLOR_WHITE)
+        self.screen.blit(direction_text, (10, 90))
+
+        # 调试模式：显示坦克坐标和粒子数量
+        if self.DEBUG:
+            debug_y = 130
+            # 显示玩家坦克位置
+            pos_text = self.font.render(f"Player: ({int(self.player_tank.x)}, {int(self.player_tank.y)})",
+                                        True, COLOR_WHITE)
+            self.screen.blit(pos_text, (10, debug_y))
+            debug_y += 25
+
+            # 显示敌方坦克位置
+            for i, tank in enumerate(self.enemy_tanks):
+                tank_text = self.font.render(
+                    f"{tank.color}: ({int(tank.x)}, {int(tank.y)})",
+                    True, COLOR_WHITE
+                )
+                self.screen.blit(tank_text, (10, debug_y))
+                debug_y += 25
+
+            # 显示粒子系统信息
+            particle_groups = len(particle_system.particle_groups)
+            total_particles = sum(len(particles) for particles in particle_system.particle_groups.values())
+            particles_text = self.font.render(
+                f"Particles: {total_particles} in {particle_groups} groups",
+                True, COLOR_WHITE
+            )
+            self.screen.blit(particles_text, (10, debug_y))
+
+        # 显示控制提示
+        controls_text = self.font.render("WASD: Move | SPACE: Shoot | P: Pause | ESC: Quit", True, COLOR_WHITE)
+        self.screen.blit(controls_text, (SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT - 30))
+
+    def _draw_game_over(self):
+        """绘制游戏结束画面"""
+        # 半透明背景
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))
+        self.screen.blit(overlay, (0, 0))
+
+        # 游戏结束文本
+        game_over_text = self.font.render("GAME OVER", True, COLOR_WHITE)
+        text_rect = game_over_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 30))
+        self.screen.blit(game_over_text, text_rect)
+
+        # 胜利者文本
+        if self.winner:
+            winner_text = self.font.render(f"{self.winner} Wins!", True, COLOR_WHITE)
+            text_rect = winner_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 10))
+            self.screen.blit(winner_text, text_rect)
+
+        # 重新开始提示
+        restart_text = self.font.render("Press R to Restart", True, COLOR_WHITE)
+        text_rect = restart_text.get_rect(center=(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50))
+        self.screen.blit(restart_text, text_rect)
+
+        # 胜利/失败时创建一些粒子效果
+        current_time = current_time_ms()
+        if not getattr(self, '_victory_particles_created', False):
+            self._victory_particles_created = True
+            self._victory_particle_time = current_time
+
+            if self.winner == "Player":
+                # 玩家胜利，创建庆祝粒子
+                for _ in range(5):
+                    x = random.randint(0, SCREEN_WIDTH)
+                    y = random.randint(0, SCREEN_HEIGHT // 3)
+                    colors = [COLOR_YELLOW, COLOR_GREEN, COLOR_BLUE, COLOR_PURPLE, COLOR_PINK]
+                    particle_system.create_explosion(
+                        x=x, y=y,
+                        color_palette=colors,
+                        count=20,
+                        min_speed=1,
+                        max_speed=3,
+                        duration=2000,
+                        gravity=0.05
+                    )
+
+    def run(self):
+        """运行游戏主循环"""
+        self.start()
+
+        last_time = pygame.time.get_ticks()
+
+        while self.running:
+            # 计算帧间时间差，确保动画平滑
+            current_time = pygame.time.get_ticks()
+            delta_time = (current_time - last_time) / 1000.0  # 转换为秒
+            last_time = current_time
+
+            self.handle_events()
+            self.update(delta_time)  # 传递时间差到更新函数
+            self.render()
+
+            # 限制帧率但保持移动的平滑性
+            pygame.time.delay(1)  # 很小的延迟以减少CPU使用
+            self.clock.tick(FPS)
+
+        pygame.quit()
+        sys.exit()
+
+
+# 程序入口
+def main():
+    """主函数"""
+    client = GameClient()
+    client.run()
+
+
+if __name__ == "__main__":
+    main()
+

@@ -1,0 +1,85 @@
+项目概述
+我们正在开发一个多人坦克对战游戏，使用Python和Pygame。项目分为单机版和联网版，采用帧同步技术实现网络多人游戏。下面请容许我对该项目进行完整介绍
+
+为了跟踪项目进度，我们设定以下开发里程碑：
+
+里程碑 1：单机游戏原型
+    实现了基本的游戏引擎
+    创建了坦克、子弹、障碍物、地图等游戏元素
+    添加了碰撞检测系统
+    实现了简单的粒子系统（爆炸和火花效果）
+    开发了单机游戏循环
+
+里程碑 2：帧同步基础
+
+    完成帧数据结构和协议
+    实现客户端输入捕获和帧执行
+    实现服务器帧收集和分发
+
+里程碑 3：网络连接
+
+    完成网络客户端和服务器
+    实现基本的消息收发
+    测试多客户端连接
+
+里程碑 4：完整帧同步
+
+    实现完整的帧同步流程
+    测试多玩家游戏同步
+    处理网络延迟和状态校验
+
+里程碑 5：完整游戏
+
+    实现游戏UI和菜单
+    添加AI对手
+    完成游戏房间和匹配功能
+
+目前我们已经完成了里程碑1，整个项目的文件目录结构如下：
+
+project/
+├── client/
+│   ├── main.py                    # 客户端入口
+│   ├── game_engine/               # 游戏引擎组件
+│   │   ├── tank.py               # 坦克类
+│   │   ├── bullet.py             # 子弹类
+│   │   ├── obstacle.py           # 障碍物类
+│   │   ├── map.py                # 地图类
+│   │   ├── collision.py          # 碰撞系统
+│   │   └── particle_system.py    # 粒子系统
+│   ├── network/
+│   │   ├── client.py             # 网络客户端
+│   │   └── protocol.py           # 通信协议
+│   ├── frame_sync/               # 帧同步相关组件
+│   │   ├── input_manager.py      # 输入管理
+│   │   ├── frame_executor.py     # 帧执行
+│   │   └── state_synchronizer.py # 状态同步
+│   ├── ui/                       # 用户界面（待实现）
+│   │   ├── menu.py               # 游戏菜单
+│   │   └── hud.py                # 游戏UI
+│   └── resources/                # 资源文件
+│   ├── test/                     # 测试代码
+│   │   └── test_tank_movement.py  # 测试坦克移动
+│
+├── server/
+│   ├── main.py                    # 服务器入口
+│   ├── room.py                    # 房间管理
+│   ├── session.py                 # 会话管理
+│   ├── frame_sync/                # 服务器帧同步组件
+│   │   ├── frame_manager.py      # 帧管理
+│   │   └── validator.py          # 验证器（待实现）
+│   ├── network/
+│   │   ├── server.py             # 网络服务器
+│   │   └── protocol.py           # 通信协议（待实现）
+│   └── ai/                       # AI组件（待实现）
+│       ├── tank_ai.py            # 坦克AI
+│       └── pathfinding.py        # 寻路算法
+│
+└── common/
+    ├── constants.py               # 常量定义
+    ├── utils.py                   # 工具函数
+    ├── events.py                  # 事件定义
+    ├── serialization.py           # 数据序列化
+    ├── frame_data.py              # 帧数据结构
+    └── deterministic_engine.py    # 确定性引擎
+
+很多文件的代码还没进行填充，我会在下面的继续输出我们当前已经写好的代码，你先不用对我们做任何回答。
