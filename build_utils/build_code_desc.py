@@ -47,7 +47,7 @@ def main():
                 "common/constants.py", "common/deterministic_engine.py", "common/utils.py",
                 "client/game_engine/bullet.py", "client/game_engine/collision.py", "client/game_engine/map.py",
                 "client/game_engine/obstacle.py", "client/game_engine/particle_system.py", "client/game_engine/tank.py",
-                "client/test/test_tank_movement.py", "client/main.py"
+                "client/main.py", "test/test_tank_movement.py"
             ]
     print_file_contents(files, base, "code_desc.txt")
 
