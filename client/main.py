@@ -236,7 +236,7 @@ class GameClient:
     def update_game_state(self):
         """更新游戏状态（由帧执行器调用）"""
         # 应用逻辑输入到游戏对象
-        self.frame_executor.apply_inputs_to_game_objects()
+        self.apply_inputs_to_game_objects()
 
         # 更新粒子系统
         particle_system.update(LOGIC_DELTA_TIME)
@@ -257,6 +257,32 @@ class GameClient:
                 current_bullets.append(bullet)
 
         self.bullets = current_bullets
+
+    def apply_inputs_to_game_objects(self):
+        """将逻辑输入应用到游戏对象"""
+        # 应用玩家坦克输入
+        logical_inputs = self.frame_executor.logical_inputs
+
+        if self.player_tank:
+            player_input = logical_inputs.get_client_input(self.player_tank.tank_id)
+            self.player_tank.apply_input(player_input, self.map.obstacles)
+
+            # 处理射击
+            if player_input.get('shoot'):
+                self.handle_tank_shoot(self.player_tank)
+
+            print(f"[FrameExecutor] Applied input to player tank: {player_input}")
+
+        # 应用敌方坦克输入
+        for enemy_tank in self.enemy_tanks:
+            enemy_input = logical_inputs.get_client_input(enemy_tank.tank_id)
+            enemy_tank.apply_input(enemy_input, self.map.obstacles)
+
+            # 处理射击
+            if enemy_input.get('shoot'):
+                self.handle_tank_shoot(enemy_tank)
+
+            print(f"[FrameExecutor] Applied input to enemy tank {enemy_tank.tank_id}: {enemy_input}")
 
     def handle_tank_shoot(self, tank):
         """处理坦克射击"""

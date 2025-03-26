@@ -440,7 +440,7 @@ class Tank:
         tank.update_image()  # 更新图像以反映新方向
         return tank
 
-    def apply_input(self, input_data):
+    def apply_input(self, input_data, obstacles):
         """应用输入数据更新坦克状态"""
         if not input_data:
             return
@@ -450,17 +450,13 @@ class Tank:
             movement = input_data['movement']
 
             if movement == 'up':
-                self.set_direction(self.UP)
-                self.moving = True
+                self.move_in_direction(self.UP, obstacles)
             elif movement == 'right':
-                self.set_direction(self.RIGHT)
-                self.moving = True
+                self.move_in_direction(self.RIGHT, obstacles)
             elif movement == 'down':
-                self.set_direction(self.DOWN)
-                self.moving = True
+                self.move_in_direction(self.DOWN, obstacles)
             elif movement == 'left':
-                self.set_direction(self.LEFT)
-                self.moving = True
+                self.move_in_direction(self.LEFT, obstacles)
             elif movement == 'stop':
                 self.moving = False
 

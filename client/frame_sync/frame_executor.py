@@ -156,6 +156,9 @@ class FrameExecutor:
             # 非输入帧，仅更新游戏状态，不处理输入
             print(f"[FrameExecutor] Non-input frame {self.current_frame}, updating game state without input processing")
 
+            # 清空逻辑输入
+            self.logical_inputs.set_non_input()
+
             # 更新游戏状态
             self.game_client.update_game_state()
 
@@ -200,30 +203,6 @@ class FrameExecutor:
 
         # 通过游戏客户端发送请求
         self.game_client.send_message(request_message)
-
-    def apply_inputs_to_game_objects(self):
-        """将逻辑输入应用到游戏对象"""
-        # 应用玩家坦克输入
-        if self.game_client.player_tank:
-            player_input = self.logical_inputs.get_client_input(self.game_client.player_tank.tank_id)
-            self.game_client.player_tank.apply_input(player_input)
-
-            # 处理射击
-            if player_input.get('shoot'):
-                self.game_client.handle_tank_shoot(self.game_client.player_tank)
-
-            print(f"[FrameExecutor] Applied input to player tank: {player_input}")
-
-        # 应用敌方坦克输入
-        for enemy_tank in self.game_client.enemy_tanks:
-            enemy_input = self.logical_inputs.get_client_input(enemy_tank.tank_id)
-            enemy_tank.apply_input(enemy_input)
-
-            # 处理射击
-            if enemy_input.get('shoot'):
-                self.game_client.handle_tank_shoot(enemy_tank)
-
-            print(f"[FrameExecutor] Applied input to enemy tank {enemy_tank.tank_id}: {enemy_input}")
 
     def debug_print_input_buffer(self):
         """打印当前输入缓冲区状态"""

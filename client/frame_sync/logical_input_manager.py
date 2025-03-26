@@ -41,6 +41,10 @@ class LogicalInputManager:
             print(f"[LogicalInput] Processing {len(inputs_list)} inputs for client {client_id}")
             self.merge_inputs(client_id, inputs_list)
 
+    def set_non_input(self):
+        """清空input"""
+        self.client_inputs = {}
+
     def get_client_input(self, client_id):
         """获取特定客户端的合并输入"""
         if client_id in self.client_inputs:
