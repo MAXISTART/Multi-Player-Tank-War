@@ -6,8 +6,9 @@
 # 游戏常量
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-FPS = 60
-TICK_RATE = 30  # 游戏逻辑更新率
+LOGIC_TICK_RATE = 60  # 游戏逻辑更新帧率
+LOGIC_DELTA_TIME = 1 / 60  # 游戏逻辑更新的Delta Time
+TURN_SIZE = 6    # 每个回合包含的帧数（每隔多少帧同步一次）
 
 # 游戏目录
 RESOURCES_DIR = "resources"
@@ -76,9 +77,10 @@ EVENT_GAME_END = 4
 
 # 游戏状态
 STATE_MENU = 0
-STATE_PLAYING = 1
-STATE_PAUSED = 2
-STATE_GAME_OVER = 3
+STATE_LOADING = 1  # 新增 Loading 状态
+STATE_PLAYING = 2  # 由于新增了 LOADING 状态，所以 PLAYING 状态的值变为 2
+STATE_PAUSED = 3   # 后续状态值也相应调整
+STATE_GAME_OVER = 4
 
 # 游戏模式
 MODE_SINGLE_PLAYER = 0
@@ -98,3 +100,22 @@ UI_BUTTON_TEXT_COLOR = COLOR_WHITE
 # 音效音量
 SOUND_VOLUME = 0.5
 MUSIC_VOLUME = 0.3
+
+# 网络相关常量
+DEFAULT_SERVER_PORT = 8766
+DEFAULT_SERVER_HOST = "localhost"
+CONNECTION_TIMEOUT = 5000  # 连接超时（毫秒）
+RECONNECT_INTERVAL = 1000  # 重连间隔（毫秒）
+MIN_PLAYERS = 2  # 最小所需玩家数
+MAX_PLAYERS = 4  # 最大支持玩家数
+
+# 网络游戏状态常量
+GAME_STATE_WAITING = "waiting"
+GAME_STATE_READY = "ready"
+GAME_STATE_LOADING = "loading"  # 新增加载状态
+GAME_STATE_PLAYING = "playing"
+GAME_STATE_PAUSED = "paused"
+GAME_STATE_ENDED = "ended"
+
+# 网络调试配置
+NETWORK_DEBUG_MODE = True  # 网络调试模式

@@ -34,55 +34,20 @@
     添加AI对手
     完成游戏房间和匹配功能
 
-目前我们已经完成了里程碑1，整个项目的文件目录结构如下：
+目前我们已经推进到里程碑3，并且这一个阶段期待的网络同步框架是这样的
+1. Server和Client的逻辑帧率都是60fps
+2. Client只要有输入就往Server发送，Server拿到输入后会缓存起来。
+3. Server每5帧才向所有Client广播所有Client的输入(这5帧叫做一个turn)，这个广播的输入都需要附带上当前Server的帧号，而这种帧我们叫输入帧
+4. Client收到Server广播的消息后会缓存起来，自己update的时候，如果当前帧是应该处理输入的帧（比如当前是第五帧），则才从消息缓存中搜索该帧号对应的输入帧，找到的话就直接应用输入，找不到则停止逻辑更新，等待输入帧的到来
+5. 暂时不要进行预测和回滚（后面再优化）
 
-project/
-├── client/
-│   ├── main.py                    # 客户端入口
-│   ├── game_engine/               # 游戏引擎组件
-│   │   ├── tank.py               # 坦克类
-│   │   ├── bullet.py             # 子弹类
-│   │   ├── obstacle.py           # 障碍物类
-│   │   ├── map.py                # 地图类
-│   │   ├── collision.py          # 碰撞系统
-│   │   └── particle_system.py    # 粒子系统
-│   ├── network/
-│   │   ├── client.py             # 网络客户端
-│   │   └── protocol.py           # 通信协议
-│   ├── frame_sync/               # 帧同步相关组件
-│   │   ├── input_manager.py      # 输入管理
-│   │   ├── frame_executor.py     # 帧执行
-│   │   └── state_synchronizer.py # 状态同步
-│   ├── ui/                       # 用户界面（待实现）
-│   │   ├── menu.py               # 游戏菜单
-│   │   └── hud.py                # 游戏UI
-│   ├── resources/                # 资源文件
-│   └── test/                     # 测试代码
-│       └── test_tank_movement.py  # 测试坦克移动
-│
-├── server/
-│   ├── main.py                    # 服务器入口
-│   ├── room.py                    # 房间管理
-│   ├── session.py                 # 会话管理
-│   ├── frame_sync/                # 服务器帧同步组件
-│   │   ├── frame_manager.py      # 帧管理
-│   │   └── validator.py          # 验证器（待实现）
-│   ├── network/
-│   │   ├── server.py             # 网络服务器
-│   │   └── protocol.py           # 通信协议（待实现）
-│   └── ai/                       # AI组件（待实现）
-│       ├── tank_ai.py            # 坦克AI
-│       └── pathfinding.py        # 寻路算法
-│
-├── common/
-│   ├── constants.py               # 常量定义
-│   ├── utils.py                   # 工具函数
-│   ├── events.py                  # 事件定义
-│   ├── serialization.py           # 数据序列化
-│   ├── frame_data.py              # 帧数据结构
-│   └── deterministic_engine.py    # 确定性引擎
-│
-└── test/
-    └── test_tank_movement.py      # 测试坦克移动
+在这个框架上测试流程是这样的：
+1. 启动Server，Server会等待一定数量的Client连接
+2. 启动多个client，然后所有Client处于等待连接服务器的状态，不断向服务器地址发送自己的连接请求
+3. Server被一定数量的Client连接后，会向所有Client发送游戏就绪的信号
+4. Client收到就绪的信号后会停止发送连接请求，然后初始化游戏（加载资源和关卡），此时Client进入Loading界面，画面显示当前这局游戏总共有多少玩家参与以及加载进度，
+5. Client loading结束后发送一个信号给Server，告诉Server自己已经loading 结束，随时可以开始游戏
+5. Server收到所有Client的准备好信号后，会计算当前时间500ms后的时间戳，这个叫时间戳叫 GameStartTime，然后封装进游戏开始的信号，广播给所有Client
+5. Client收到游戏开始的信号后，提取出GameStartTime，等到了GameStartTime才开始逻辑update，第一个tick是进入到游戏画面，这个GameStartTime的设计就是为了考虑Server发给Client的延迟，尽力保证Server和Client都是同步的
 
-很多文件的代码还没进行填充，我会在下面的继续输出我们当前已经写好的代码，你先不用对我们做任何回答。
+我会在下面的继续输出我们当前已经写好的代码，你先不用对我们做任何回答。

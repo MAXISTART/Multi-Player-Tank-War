@@ -1,0 +1,105 @@
+基于目前的代码，我启动了server以及2个client，
+server的连接两个client后输出如下：
+[Server] Connected players: 2/2
+[Server] Required number of players (2) reached!
+[Server] Broadcasting game_ready message to 2 players
+[Server] Broadcasting message type: game_ready to 2 clients
+[Server] Sent message to client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Server] Sent message to client d94c1083-17dd-48db-86c4-1df45bd6c9ca
+[Server] Received client_ready message from client d94c1083-17dd-48db-86c4-1df45bd6c9ca
+[Server] Client d94c1083-17dd-48db-86c4-1df45bd6c9ca is ready
+[FrameManager] Client d94c1083-17dd-48db-86c4-1df45bd6c9ca marked as ready. Ready clients: 1/2
+[Server] Ready clients: 1/2
+[Server] Received client_ready message from client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Server] Client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01 is ready
+[FrameManager] Client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01 marked as ready. Ready clients: 2/2
+[Server] Ready clients: 2/2
+[FrameManager] Added default input for client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01 at frame 0
+[FrameManager] Added default input for client d94c1083-17dd-48db-86c4-1df45bd6c9ca at frame 0
+[FrameManager] Game starting at 1742958234223 (current time + 500ms)
+[Debug] Input Buffer Status - Current Frame: 0
+  Frame 0: 2 clients have inputs
+    Client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01: {'movement': 'stop', 'shoot': False}
+    Client d94c1083-17dd-48db-86c4-1df45bd6c9ca: {'movement': 'stop', 'shoot': False}
+[Server] All clients ready, starting game at 1742958234223 (in 500ms)
+[Server] Broadcasting message type: game_start to 2 clients
+[Server] Sent message to client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Server] Sent message to client d94c1083-17dd-48db-86c4-1df45bd6c9ca
+[Server] Prepared broadcast for frames 0-1 with 2 total inputs
+[Debug] Input Buffer Status - Current Frame: 1
+  Frame 0: 2 clients have inputs
+    Client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01: {'movement': 'stop', 'shoot': False}
+    Client d94c1083-17dd-48db-86c4-1df45bd6c9ca: {'movement': 'stop', 'shoot': False}
+[Server] Broadcasting inputs for frame 1
+[Server] Broadcasting message type: input_frame to 2 clients
+[Server] Sent message to client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Server] Sent message to client d94c1083-17dd-48db-86c4-1df45bd6c9ca
+[Server] Sent initial frame broadcast
+[Server] Received input message from client d94c1083-17dd-48db-86c4-1df45bd6c9ca
+[Server] Input from d94c1083-17dd-48db-86c4-1df45bd6c9ca for frame 0
+[FrameManager] Stored input for client d94c1083-17dd-48db-86c4-1df45bd6c9ca at frame 0: {'movement': 'stop', 'shoot': False}
+[Server] Received input message from client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Server] Input from c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01 for frame 0
+[FrameManager] Stored input for client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01 at frame 0: {'movement': 'stop', 'shoot': False}
+[Server] Prepared broadcast for frames 1-5 with 0 total inputs
+[Debug] Input Buffer Status - Current Frame: 5
+  Frame 0: 2 clients have inputs
+    Client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01: {'movement': 'stop', 'shoot': False}
+    Client d94c1083-17dd-48db-86c4-1df45bd6c9ca: {'movement': 'stop', 'shoot': False}
+[Server] Broadcasting inputs for frame 5
+[Server] Broadcasting message type: input_frame to 2 clients
+[Server] Sent message to client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Server] Sent message to client d94c1083-17dd-48db-86c4-1df45bd6c9ca
+[Server] Prepared broadcast for frames 6-10 with 0 total inputs
+[Debug] Input Buffer Status - Current Frame: 10
+  Frame 0: 2 clients have inputs
+    Client c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01: {'movement': 'stop', 'shoot': False}
+    Client d94c1083-17dd-48db-86c4-1df45bd6c9ca: {'movement': 'stop', 'shoot': False}
+...
+
+而 Client的输出则如下:
+[Client] Initializing with server URL: ws://localhost:8766
+[Client] Connecting to ws://localhost:8766 (attempt 1/10)...
+[Client] Connected to server successfully!
+[Client] Connected to server
+[Client] Received message type: welcome
+[Client] Received client ID: c5fbc45d-f29b-4dde-9b96-66d3d9f8fb01
+[Client] Received message type: game_ready
+[Client] Game ready with 2 players
+[Client] Received game_ready with 2 players
+[Client] Changed state to LOADING
+[Client] Loading progress: 10%
+[Client] Loading progress: 20%
+[Client] Loading progress: 30%
+[Client] Loading progress: 40%
+[Client] Loading progress: 50%
+[Client] Loading progress: 60%
+[Client] Loading progress: 70%
+[Client] Loading progress: 80%
+[Client] Loading progress: 90%
+[Client] Loading progress: 100%
+[Client] Loading complete, sending client_ready
+[Client] Sending client ready message
+[Client] Received message type: game_start
+[Client] Game will start at 1742958234223, Current time: 1742958233820, Delta: 403ms
+[Client] Received game_start with start_time=1742958234223, players=2
+Warning: Could not find safe spawn point near (100.0, 500.0)
+[Client] Game initialized, waiting for start time
+[Client] Game will start in 397ms
+[Client] Start time reached! Changing state to PLAYING
+[Input] Input changed: {'movement': 'stop', 'shoot': False}
+[Client] Sending input for frame 0: {'movement': 'stop', 'shoot': False}
+[FrameExecutor] Using local input for frame 0 as server input not received yet
+[FrameExecutor] Missing input for frame 0
+[FrameExecutor] Waiting for input frames 0-4
+[Client] Frame 1 execution paused, waiting for input
+[FrameExecutor] Missing input for frame 0
+[FrameExecutor] Waiting for input frames 0-4
+[Client] Frame 1 execution paused, waiting for input
+[FrameExecutor] Missing input for frame 0
+[FrameExecutor] Waiting for input frames 0-4
+[Client] Frame 1 execution paused, waiting for input
+[FrameExecutor] Missing input for frame 0
+[FrameExecutor] Waiting for input frames 0-4
+......
+

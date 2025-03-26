@@ -86,7 +86,7 @@ def main():
         screen.blit(controls_text, (10, SCREEN_HEIGHT - 30))
 
         pygame.display.flip()
-        clock.tick(FPS)
+        clock.tick(LOGIC_TICK_RATE)
 
     pygame.quit()
     sys.exit()

@@ -1,326 +1,205 @@
 # client/network/client.py
-"""
-客户端网络模块：处理网络通信
-"""
-
-import socket
+import asyncio
+import websockets
 import json
 import time
-import queue
-import threading
+import random
+import traceback
 
 
 class NetworkClient:
-    """
-    网络客户端：处理与服务器的通信
-
-    主要功能：
-    - 连接到服务器
-    - 发送和接收消息
-    - 维持连接状态
-    """
-
-    def __init__(self, host, port, debug=False):
-        """
-        初始化网络客户端
-
-        Args:
-            host: 服务器主机名或IP
-            port: 服务器端口
-            debug: 是否启用调试输出
-        """
-        self.host = host
-        self.port = port
-        self.debug = debug
-
-        self.socket = None
+    def __init__(self, game_client, server_url="ws://localhost:8766"):
+        self.game_client = game_client
+        self.server_url = server_url
+        self.websocket = None
         self.connected = False
+        self.client_id = None
+        self.message_queue = asyncio.Queue()
+        self.reconnect_interval = 1.0  # 重连间隔（秒）
+        self.max_retries = 10  # 最大重试次数
+        self.retry_count = 0
 
-        # 消息队列
-        self.send_queue = queue.Queue()
-        self.receive_queue = queue.Queue()
-
-        # 线程
-        self.send_thread = None
-        self.receive_thread = None
-
-        # 回调函数
-        self.message_callback = None
-        self.game_start_callback = None
-        self.game_end_callback = None
-
-    def connect(self):
-        """
-        连接到服务器
-
-        Returns:
-            布尔值，表示连接是否成功
-        """
-        try:
-            # 创建套接字
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(5)  # 设置超时时间
-
-            # 连接到服务器
-            self.socket.connect((self.host, self.port))
-            self.connected = True
-
-            print(f"Connected to server at {self.host}:{self.port}")
-
-            # 启动发送和接收线程
-            self.send_thread = threading.Thread(target=self._send_loop)
-            self.send_thread.daemon = True
-            self.send_thread.start()
-
-            self.receive_thread = threading.Thread(target=self._receive_loop)
-            self.receive_thread.daemon = True
-            self.receive_thread.start()
-
-            # 发送连接消息
-            client_id = f"client_{int(time.time())}"
-            self.send_message({
-                'type': 'connect',
-                'client_id': client_id
-            })
-
-            return True
-
-        except Exception as e:
-            print(f"Error connecting to server: {e}")
-            self.connected = False
+    async def connect_with_retry(self):
+        """不断尝试连接到服务器，直到成功或达到最大重试次数"""
+        if self.retry_count >= self.max_retries:
+            print(f"[Client] Reached max retry attempts ({self.max_retries})")
             return False
 
-    def disconnect(self):
+        try:
+            print(f"[Client] Connecting to {self.server_url} (attempt {self.retry_count + 1}/{self.max_retries})...")
+            # 设置超时以避免长时间等待
+            self.websocket = await asyncio.wait_for(
+                websockets.connect(self.server_url),
+                timeout=3.0
+            )
+            self.connected = True
+            self.retry_count = 0  # 重置重试计数
+            print(f"[Client] Connected to server successfully!")
+
+            # 启动消息处理任务
+            asyncio.create_task(self.receiver())
+            asyncio.create_task(self.message_handler())
+
+            return True
+        except asyncio.TimeoutError:
+            print(f"[Client] Connection timed out")
+        except ConnectionRefusedError:
+            print(f"[Client] Connection refused - server may not be running")
+        except Exception as e:
+            print(f"[Client] Connection error: {e}")
+            print(f"[Client] Trace: {traceback.format_exc()}")
+
+        self.retry_count += 1
+        return False
+
+    async def connect(self):
+        """连接到游戏服务器（为保持兼容）"""
+        return await self.connect_with_retry()
+
+    async def disconnect(self):
         """断开与服务器的连接"""
-        if not self.connected:
-            return
+        if self.websocket:
+            await self.websocket.close()
+            self.connected = False
+            print("[Client] Disconnected from server")
 
-        print("Disconnecting from server...")
+    async def send_message(self, message):
+        """发送消息到服务器"""
+        if not self.connected:
+            print("[Client] Can't send message - not connected")
+            return False
+
+        try:
+            message_json = json.dumps(message)
+            await self.websocket.send(message_json)
+            return True
+        except Exception as e:
+            print(f"[Client] Send error: {e}")
+            self.connected = False
+            # 自动重连
+            asyncio.create_task(self.reconnect())
+            return False
+
+    async def reconnect(self):
+        """断线重连"""
+        print("[Client] Attempting to reconnect...")
         self.connected = False
+        self.retry_count = 0  # 重置重试计数
+        await self.reconnect_with_exponential_backoff()
 
-        try:
-            # 发送断开连接消息
-            self.send_message({'type': 'disconnect'})
-            time.sleep(0.1)  # 给一点时间让消息发送出去
-        except:
-            pass  # 忽略发送错误
+    async def reconnect_with_exponential_backoff(self):
+        """使用指数退避策略进行重连"""
+        retry_delay = 1.0  # 初始延迟1秒
+        max_delay = 30.0  # 最大延迟30秒
 
-        try:
-            self.socket.shutdown(socket.SHUT_RDWR)
-        except:
-            pass  # 忽略关闭错误
+        while self.retry_count < self.max_retries and not self.connected:
+            print(
+                f"[Client] Reconnecting attempt {self.retry_count + 1}/{self.max_retries}, waiting {retry_delay:.1f}s...")
+            await asyncio.sleep(retry_delay)
 
-        try:
-            self.socket.close()
-        except:
-            pass  # 忽略关闭错误
+            success = await self.connect_with_retry()
+            if success:
+                print("[Client] Reconnected successfully!")
+                return True
 
-        print("Disconnected from server")
+            # 增加延迟，但不超过最大值
+            retry_delay = min(retry_delay * 1.5, max_delay)
+            self.retry_count += 1
 
-    def send_message(self, message):
-        """
-        发送消息到服务器
-
-        Args:
-            message: 要发送的消息(dict)
-        """
         if not self.connected:
-            return
-
-        self.send_queue.put(message)
-
-    def receive_message(self, block=True, timeout=None):
-        """
-        从接收队列获取消息
-
-        Args:
-            block: 如果队列为空，是否阻塞
-            timeout: 阻塞的超时时间
-
-        Returns:
-            消息字典或None
-        """
-        try:
-            return self.receive_queue.get(block=block, timeout=timeout)
-        except queue.Empty:
-            return None
-
-    def is_connected(self):
-        """
-        检查是否连接到服务器
-
-        Returns:
-            布尔值，表示是否已连接
-        """
+            print("[Client] Failed to reconnect after multiple attempts")
         return self.connected
 
-    def _send_loop(self):
-        """发送消息的循环"""
-        try:
-            while self.connected:
-                try:
-                    # 从发送队列获取消息
-                    if not self.send_queue.empty():
-                        message = self.send_queue.get()
-
-                        # 序列化和发送消息
-                        message_data = json.dumps(message).encode('utf-8')
-                        message_length = len(message_data).to_bytes(4, byteorder='big')
-
-                        try:
-                            self.socket.sendall(message_length + message_data)
-
-                            if self.debug:
-                                print(f"Sent: {message}")
-                        except (socket.error, BrokenPipeError) as e:
-                            print(f"Error sending message: {e}")
-                            self.connected = False
-                            break
-
-                    # 避免CPU过载
-                    time.sleep(0.01)
-                except Exception as e:
-                    print(f"Error in send loop: {e}")
-                    # 继续循环而不是退出，这样小的错误不会导致整个连接断开
-                    time.sleep(0.1)  # 错误后稍微等待一下
-        except Exception as e:
-            print(f"Fatal error in send loop: {e}")
-        finally:
-            print("Send loop terminated")
-
-    def _receive_loop(self):
-        """接收消息的循环"""
-        try:
-            while self.connected:
-                try:
-                    # 接收消息长度（4字节）
-                    length_data = self._receive_exactly(4)
-                    if not length_data:
-                        # 连接关闭
-                        self.connected = False
-                        break
-
-                    message_length = int.from_bytes(length_data, byteorder='big')
-
-                    # 接收消息内容
-                    message_data = self._receive_exactly(message_length)
-                    if not message_data:
-                        # 连接关闭
-                        self.connected = False
-                        break
-
-                    # 解析消息
-                    message = json.loads(message_data.decode('utf-8'))
-
-                    # 放入接收队列
-                    self.receive_queue.put(message)
-
-                    if self.debug:
-                        print(f"Received: {message}")
-
-                    # 处理特定类型的消息
-                    self._process_message(message)
-
-                except json.JSONDecodeError as e:
-                    print(f"Error decoding message: {e}")
-                except Exception as e:
-                    print(f"Error in receive loop: {e}")
-                    time.sleep(0.1)  # 错误后稍微等待一下
-        except Exception as e:
-            print(f"Fatal error in receive loop: {e}")
-        finally:
-            print("Receive loop terminated")
-            self.connected = False
-
-    def _receive_exactly(self, n):
-        """确保接收恰好n个字节"""
-        data = bytearray()
-        remaining = n
-        while remaining > 0:
+    async def receiver(self):
+        """接收服务器消息"""
+        while self.connected and self.game_client.running:
             try:
-                chunk = self.socket.recv(remaining)
-                if not chunk:  # 连接关闭
-                    return None
-                data.extend(chunk)
-                remaining -= len(chunk)
-            except socket.timeout:
-                # 超时后继续尝试接收
-                continue
+                message = await self.websocket.recv()
+                data = json.loads(message)
+                await self.message_queue.put(data)
+            except websockets.exceptions.ConnectionClosed:
+                print(f"[Client] Connection closed by server")
+                self.connected = False
+                # 尝试重连
+                asyncio.create_task(self.reconnect())
+                break
             except Exception as e:
-                print(f"Error receiving data: {e}")
-                return None
-        return bytes(data)
+                print(f"[Client] Receive error: {e}")
+                self.connected = False
+                # 尝试重连
+                asyncio.create_task(self.reconnect())
+                break
 
-    def _process_message(self, message):
-        """
-        处理特定类型的消息
+    async def message_handler(self):
+        """处理接收到的消息"""
+        while self.connected and self.game_client.running:
+            try:
+                data = await self.message_queue.get()
+                self.process_message(data)
+                self.message_queue.task_done()
+            except Exception as e:
+                print(f"[Client] Message handling error: {e}")
 
-        Args:
-            message: 收到的消息
-        """
-        if not isinstance(message, dict):
-            return
+    def process_message(self, data):
+        """处理服务器消息"""
+        msg_type = data.get('type')
+        print(f"[Client] Received message type: {msg_type}")
 
-        message_type = message.get('type')
+        if msg_type == 'welcome':
+            # 服务器欢迎消息，保存客户端ID
+            self.client_id = data.get('client_id')
+            print(f"[Client] Received client ID: {self.client_id}")
 
-        # 处理欢迎消息
-        if message_type == 'welcome':
-            room_id = message.get('room_id')
-            room_name = message.get('room_name')
-            welcome_msg = message.get('message')
-            print(f"Received welcome: {welcome_msg}")
-            print(f"Joined room: {room_name} (ID: {room_id})")
+        elif msg_type == 'game_ready':
+            # 游戏准备就绪
+            players = data.get('players', 0)
+            print(f"[Client] Game ready with {players} players")
+            self.game_client.on_game_ready(players)
 
-        # 处理游戏开始消息
-        elif message_type == 'game_start':
-            game_id = message.get('game_id')
-            player_id = message.get('player_id')
-            player_index = message.get('player_index')
-            print(f"Game started! Game ID: {game_id}")
-            print(f"You are player {player_index} (ID: {player_id})")
+        elif msg_type == 'game_start':
+            # 游戏开始
+            start_time = data.get('start_time')
+            players = data.get('players', 0)
+            current_time = int(time.time() * 1000)
+            print(
+                f"[Client] Game will start at {start_time}, Current time: {current_time}, Delta: {start_time - current_time}ms")
+            self.game_client.on_game_start(start_time, players)
 
-            # 通知游戏开始
-            if self.game_start_callback:
-                self.game_start_callback(message)
+        elif msg_type == 'input_frame':
+            # 输入帧
+            current_frame = data.get('current_frame')
+            inputs = data.get('inputs', {})
+            inputs_count = sum(
+                len(frame_inputs) for client_id, frame_inputs in inputs.items() if isinstance(frame_inputs, dict))
+            print(f"[Client] Received input frame for frame {current_frame}, inputs count: {inputs_count}")
 
-        # 处理游戏结束消息
-        elif message_type == 'game_end':
-            winner = message.get('winner')
-            duration = message.get('duration')
-            print(f"Game ended! Winner: {winner}")
-            print(f"Game duration: {duration:.2f} seconds")
+            # 详细输出每个帧的输入，便于调试
+            for frame_num, frame_data in inputs.items():
+                print(f"[Client] Frame {frame_num} has inputs: {frame_data}")
 
-            # 通知游戏结束
-            if self.game_end_callback:
-                self.game_end_callback(message)
+            self.game_client.on_input_frame(current_frame, inputs)
 
-        # 其他消息由回调函数处理
-        elif self.message_callback:
-            self.message_callback(message)
+    async def send_connect_request(self):
+        """发送连接请求"""
+        message = {
+            'type': 'connect_request'
+        }
+        print("[Client] Sending connect request")
+        await self.send_message(message)
 
-    def set_message_callback(self, callback):
-        """
-        设置消息回调函数
+    async def send_client_ready(self):
+        """发送客户端就绪消息"""
+        message = {
+            'type': 'client_ready'
+        }
+        print("[Client] Sending client ready message")
+        await self.send_message(message)
 
-        Args:
-            callback: 回调函数，接收一个参数(消息)
-        """
-        self.message_callback = callback
-
-    def set_game_start_callback(self, callback):
-        """
-        设置游戏开始回调函数
-
-        Args:
-            callback: 回调函数，接收一个参数(游戏开始消息)
-        """
-        self.game_start_callback = callback
-
-    def set_game_end_callback(self, callback):
-        """
-        设置游戏结束回调函数
-
-        Args:
-            callback: 回调函数，接收一个参数(游戏结束消息)
-        """
-        self.game_end_callback = callback
+    async def send_input(self, frame, inputs):
+        """发送输入到服务器"""
+        message = {
+            'type': 'input',
+            'frame': frame,
+            'inputs': inputs
+        }
+        await self.send_message(message)

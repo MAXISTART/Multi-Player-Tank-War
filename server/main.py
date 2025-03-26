@@ -1,227 +1,277 @@
 # server/main.py
-"""
-服务器主模块：服务器入口点
-"""
-
+import asyncio
+import websockets
+import json
 import time
-import sys
-import argparse
-import threading
-from server.network.server import NetworkServer
+import uuid
+from collections import defaultdict
 from server.frame_sync.frame_manager import FrameManager
-from server.room import Room
-from server.session import GameSession
-from common.constants import SERVER_IP, SERVER_PORT
+from common.constants import LOGIC_TICK_RATE
 
 
 class GameServer:
-    """
-    游戏服务器：管理整个服务器流程
-
-    主要功能：
-    - 初始化服务器组件
-    - 管理房间和会话
-    - 处理命令行命令
-    """
-
-    def __init__(self, host=SERVER_IP, port=SERVER_PORT):
-        """初始化游戏服务器"""
-        self.host = host
+    def __init__(self, port=8766, required_players=2):
         self.port = port
-        self.running = False
+        self.clients = {}  # websocket -> client_id
+        self.client_details = {}  # client_id -> details
+        self.frame_manager = FrameManager()
+        self.connection_phase = True
+        self.server = None
+        self.required_players = required_players  # 需要的玩家数量
+        print(f"[Server] Initialized with port {port}, requiring {required_players} players")
 
-        # 网络组件
-        self.network_server = NetworkServer(host, port)
-
-        # 房间和会话
-        self.rooms = {}
-        self.default_room = None
-
-        # 帧同步
-        self.frame_manager = None
-
-        # 调试标志
-        self.debug = True
-
-    def start(self):
-        """启动服务器"""
-        print(f"Starting server on {self.host}:{self.port}")
-
-        # 启动网络服务器
-        if not self.network_server.start():
-            print("Failed to start network server")
-            return False
-
-        # 创建默认房间
-        self.default_room = Room("default", "Default Room")
-        self.rooms["default"] = self.default_room
-
-        # 注册网络消息处理函数
-        self.network_server.register_handler('connect', self._handle_connect)
-        self.network_server.register_handler('disconnect', self._handle_disconnect)
-
-        # 创建默认游戏会话
-        default_session = GameSession("default_session", self.network_server)
-        self.default_room.set_session(default_session)
-
-        # 创建帧管理器
-        self.frame_manager = FrameManager(self.network_server, default_session)
-        self.frame_manager.start()
-
-        self.running = True
-        print("Server started successfully")
-
-        # 启动命令行处理线程
-        command_thread = threading.Thread(target=self._command_loop)
-        command_thread.daemon = True
-        command_thread.start()
-
-        # 启动主循环
-        self._main_loop()
-
-        return True
-
-    def stop(self):
-        """停止服务器"""
-        print("Stopping server...")
-
-        self.running = False
-
-        # 停止帧管理器
-        if self.frame_manager:
-            self.frame_manager.stop()
-
-        # 停止网络服务器
-        if self.network_server:
-            self.network_server.stop()
-
-        print("Server stopped")
-
-    def _main_loop(self):
-        """服务器主循环"""
-        try:
-            while self.running:
-                # 更新帧管理器
-                if self.frame_manager:
-                    self.frame_manager.update()
-
-                # 控制循环速度
-                time.sleep(1 / 60)  # 约60FPS
-
-        except KeyboardInterrupt:
-            print("\nServer shutdown requested...")
-        finally:
-            self.stop()
-
-    def _command_loop(self):
-        """命令行处理循环"""
-        print("Type commands and press Enter. Type 'help' for available commands.")
-        while self.running:
-            try:
-                # 此处使用普通的阻塞式输入
-                command = input("> ").strip()
-                self._handle_command(command)
-            except EOFError:
-                break
-            except Exception as e:
-                print(f"Error processing command: {e}")
-
-    def _handle_command(self, command):
-        """
-        处理命令行命令
-
-        Args:
-            command: 命令字符串
-        """
-        if not command:
+    async def handle_client(self, websocket, path):
+        """处理客户端连接"""
+        # 如果游戏已经开始，拒绝新连接
+        if self.frame_manager.game_started:
+            print(f"[Server] Rejecting new connection - game already in progress")
+            await websocket.close(1000, "Game already in progress")
             return
 
-        parts = command.split()
-        cmd = parts[0].lower()
+        client_id = str(uuid.uuid4())
+        self.clients[websocket] = client_id
+        self.client_details[client_id] = {
+            'connected_at': int(time.time()),
+            'ready': False
+        }
 
-        if cmd == "quit" or cmd == "exit":
-            print("Shutting down server...")
-            self.running = False
+        print(f"[Server] New client connected with ID: {client_id}")
+        print(f"[Server] Connected players: {len(self.clients)}/{self.required_players}")
 
-        elif cmd == "clients":
-            clients = self.network_server.get_client_list()
-            print(f"Connected clients ({len(clients)}):")
-            for i, client_id in enumerate(clients):
-                print(f"  {i + 1}. {client_id}")
-
-        elif cmd == "rooms":
-            print(f"Rooms ({len(self.rooms)}):")
-            for room_id, room in self.rooms.items():
-                print(f"  {room_id}: {room.name} - {len(room.clients)} clients")
-
-        elif cmd == "start":
-            # 启动默认房间的游戏
-            if self.default_room:
-                session = self.default_room.get_session()
-                if session:
-                    if self.default_room.start_game():
-                        print("Game started in default room")
-                    else:
-                        print("Failed to start game in default room")
-            else:
-                print("Default room not found")
-
-        elif cmd == "help":
-            print("Available commands:")
-            print("  clients - Show connected clients")
-            print("  rooms   - Show active rooms")
-            print("  start   - Start game in default room")
-            print("  quit    - Shutdown the server")
-            print("  help    - Show this help message")
-
-        else:
-            print(f"Unknown command: {cmd}")
-            print("Type 'help' for available commands")
-
-    def _handle_connect(self, client_id, message):
-        """
-        处理客户端连接
-
-        Args:
-            client_id: 客户端ID
-            message: 连接消息
-        """
-        print(f"Client connected: {client_id}")
-
-        # 将客户端添加到默认房间
-        if self.default_room:
-            self.default_room.add_client(client_id)
-
+        try:
             # 发送欢迎消息
-            self.network_server.send_message(client_id, {
+            welcome_message = {
                 'type': 'welcome',
-                'message': f"Welcome to the server, {client_id}!",
-                'room_id': self.default_room.id,
-                'room_name': self.default_room.name
-            })
+                'client_id': client_id
+            }
+            await websocket.send(json.dumps(welcome_message))
 
-    def _handle_disconnect(self, client_id, message):
-        """
-        处理客户端断开连接
+            # 加入帧管理器
+            self.frame_manager.add_client(client_id, websocket)
 
-        Args:
-            client_id: 客户端ID
-            message: 断开连接消息
-        """
-        print(f"Client disconnected: {client_id}")
+            # 检查是否已达到所需玩家数量
+            if self.connection_phase and len(self.clients) >= self.required_players:
+                print(f"[Server] Required number of players ({self.required_players}) reached!")
+                # 发送游戏准备消息
+                ready_message = {
+                    'type': 'game_ready',
+                    'players': len(self.clients)
+                }
+                print(f"[Server] Broadcasting game_ready message to {len(self.clients)} players")
+                await self.broadcast(ready_message)
 
-        # 从所有房间移除客户端
-        for room in self.rooms.values():
-            room.remove_client(client_id)
+            # 持续接收消息
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    await self.process_message(websocket, client_id, data)
+                except json.JSONDecodeError:
+                    print(f"[Server] Invalid JSON from client {client_id}")
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"[Server] Client {client_id} disconnected: {e.code} {e.reason}")
+        except Exception as e:
+            print(f"[Server] Error handling client {client_id}: {e}")
+        finally:
+            # 客户端断开连接，清理资源
+            if websocket in self.clients:
+                del self.clients[websocket]
+            if client_id in self.client_details:
+                del self.client_details[client_id]
+            self.frame_manager.remove_client(client_id)
+
+            print(
+                f"[Server] Client {client_id} removed. Remaining players: {len(self.clients)}/{self.required_players}")
+
+            # 如果游戏已经开始，但玩家数量不足，重置游戏
+            if self.frame_manager.game_started and len(self.clients) < self.required_players:
+                print(f"[Server] Not enough players to continue. Resetting game.")
+                self.reset_game()
+
+    def reset_game(self):
+        """重置游戏状态"""
+        self.frame_manager = FrameManager()  # 创建新的帧管理器
+        self.connection_phase = True
+        print(f"[Server] Game reset. Waiting for {self.required_players} players to connect.")
+
+    async def process_message(self, websocket, client_id, data):
+        """处理客户端消息"""
+        msg_type = data.get('type')
+        print(f"[Server] Received {msg_type} message from client {client_id}")
+
+        if msg_type == 'connect_request':
+            # 连接请求
+            print(f"[Server] Client {client_id} sent connect_request")
+
+        elif msg_type == 'client_ready':
+            # 客户端准备就绪
+            print(f"[Server] Client {client_id} is ready")
+
+            # 更新客户端状态
+            if client_id in self.client_details:
+                self.client_details[client_id]['ready'] = True
+
+            # 标记客户端准备就绪
+            all_ready = self.frame_manager.mark_client_ready(client_id)
+
+            # 检查是否所有客户端都已准备就绪
+            ready_count = sum(1 for details in self.client_details.values() if details['ready'])
+            total_count = len(self.clients)
+            print(f"[Server] Ready clients: {ready_count}/{total_count}")
+
+            if all_ready:
+                # 所有客户端都准备好了，开始游戏
+                # 设置游戏开始时间为当前时间+500ms
+                start_delay_ms = 500
+                game_start_time = self.frame_manager.start_game(start_delay_ms)
+                start_message = {
+                    'type': 'game_start',
+                    'start_time': game_start_time,
+                    'players': len(self.clients)
+                }
+                print(f"[Server] All clients ready, starting game at {game_start_time} (in {start_delay_ms}ms)")
+                await self.broadcast(start_message)
+
+        elif msg_type == 'input':
+            # 处理客户端输入
+            frame = data.get('frame')
+            inputs = data.get('inputs')
+            print(f"[Server] Input from {client_id} for frame {frame}")
+            self.frame_manager.receive_input(client_id, frame, inputs)
+
+    async def broadcast(self, message):
+        """向所有客户端广播消息"""
+        if not self.clients:
+            print("[Server] No clients to broadcast to")
+            return
+
+        message_json = json.dumps(message)
+        print(f"[Server] Broadcasting message type: {message.get('type')} to {len(self.clients)} clients")
+
+        # 创建所有发送任务
+        send_tasks = []
+        for websocket in self.clients:
+            try:
+                await websocket.send(message_json)
+                client_id = self.clients.get(websocket, "unknown")
+                print(f"[Server] Sent message to client {client_id}")
+            except Exception as e:
+                client_id = self.clients.get(websocket, "unknown")
+                print(f"[Server] Error sending to client {client_id}: {e}")
+
+    async def start_server(self):
+        """启动游戏服务器"""
+        # 创建WebSocket服务器
+        self.server = await websockets.serve(
+            self.handle_client,
+            "localhost",  # 使用localhost以便于测试
+            self.port
+        )
+
+        print(f"[Server] Game server started on localhost:{self.port}")
+        print(f"[Server] Waiting for {self.required_players} players to connect...")
+
+        # 启动游戏循环
+        await self.game_loop()
+
+    async def game_loop(self):
+        """游戏主循环"""
+        debug_interval = 5  # 每5秒打印一次调试信息
+        last_debug_time = 0
+        initial_frame_sent = False  # 追踪是否已发送初始帧数据
+
+        while True:
+            current_time = int(time.time())
+
+            # 定期打印调试信息
+            if current_time - last_debug_time >= debug_interval:
+                self.print_server_state()
+                last_debug_time = current_time
+
+            # 游戏已经开始，处理帧更新
+            if self.frame_manager.game_started:
+                current_time_ms = int(time.time() * 1000)
+                elapsed_time = current_time_ms - self.frame_manager.game_start_time
+
+                # 只有在游戏开始时间已过后才进行帧更新
+                if elapsed_time >= 0:
+                    # 第一次运行时立即发送第0帧的数据
+                    if not initial_frame_sent:
+                        print("[Server] Sending initial frame data (frame 0)")
+                        initial_frame_sent = True
+                        input_message = self.frame_manager.prepare_input_broadcast()
+                        await self.broadcast(input_message)
+                        print("[Server] Initial frame data sent")
+
+                    frames_elapsed = elapsed_time * LOGIC_TICK_RATE // 1000
+
+                    # 仅当需要更新时广播帧更新
+                    if frames_elapsed > self.frame_manager.current_frame:
+                        # 更新到当前应该的帧
+                        self.frame_manager.current_frame = frames_elapsed
+
+                        # 检查是否需要广播输入帧（每turn_size帧一次）
+                        current_input_frame = (
+                                                          frames_elapsed // self.frame_manager.turn_size) * self.frame_manager.turn_size
+
+                        if current_input_frame > self.frame_manager.last_broadcast_frame:
+                            input_message = self.frame_manager.prepare_input_broadcast()
+                            print(f"[Server] Broadcasting inputs for frame {current_input_frame}")
+                            await self.broadcast(input_message)
+
+            # 短暂等待避免CPU占用过高
+            await asyncio.sleep(0.01)
+
+    def print_server_state(self):
+        """打印服务器当前状态（用于调试）"""
+        print("\n=== SERVER STATE ===")
+        print(f"Connected clients: {len(self.clients)}/{self.required_players}")
+        print(f"Connection phase: {self.connection_phase}")
+        print(f"Game started: {self.frame_manager.game_started}")
+
+        if self.client_details:
+            print("Client details:")
+            for client_id, details in self.client_details.items():
+                print(f"  - {client_id[:8]}...: Ready: {details['ready']}")
+
+        if self.frame_manager.game_started:
+            print(f"Current frame: {self.frame_manager.current_frame}")
+            print(f"Ready clients: {len(self.frame_manager.ready_clients)}/{len(self.clients)}")
+            print(f"Game start time: {self.frame_manager.game_start_time}")
+        print("===================\n")
+
+    async def stop_server(self):
+        """停止服务器"""
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+            print("[Server] Server stopped")
 
 
-# 启动服务器
+# 主函数
+async def main():
+    # 可以通过命令行参数来指定所需的玩家数量
+    import sys
+    required_players = 2  # 默认为2
+    if len(sys.argv) > 1:
+        try:
+            required_players = int(sys.argv[1])
+            print(f"[Server] Setting required players to: {required_players}")
+        except ValueError:
+            print(f"[Server] Invalid player count: {sys.argv[1]}, using default: {required_players}")
+
+    server = GameServer(required_players=required_players)
+    try:
+        await server.start_server()
+    except KeyboardInterrupt:
+        print("[Server] Interrupted, shutting down...")
+        await server.stop_server()
+    except Exception as e:
+        print(f"[Server] Error: {e}")
+        await server.stop_server()
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Tank Battle Game Server')
-    parser.add_argument('-H', '--host', default=SERVER_IP, help='Server host address')
-    parser.add_argument('-p', '--port', type=int, default=SERVER_PORT, help='Server port')
-
-    args = parser.parse_args()
-
-    server = GameServer(args.host, args.port)
-    server.start()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[Server] Server shutting down")

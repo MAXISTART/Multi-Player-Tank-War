@@ -7,13 +7,16 @@
 5. 暂时不要进行预测和回滚（后面再优化）
 
 在这个框架上测试流程是这样的：
-1. 启动多个client，然后所有Client处于等待连接服务器的状态，不断向服务器地址发送自己的连接请求
-2. 启动Server，Server会在自己启动的1s内处理Client发送过来的连接请求，主要是确定当前有多少Client请求连接，然后向所有Client发送游戏就绪的信号
-3. Client收到就绪的信号后会停止发送连接请求，接续就绪信号显示当前这局游戏总共有多少玩家参与，并且显示游戏已经准备就绪，等待开始，同时发送一个信号给Server，告诉Server自己已经准备好
-4. Server收到所有Client的准备好信号后，会计算当前时间1000ms后的时间戳，这个叫时间戳叫 GameStartTime，然后封装进游戏开始的信号，广播给所有Client
-5. Client收到游戏开始的信号后，提取出GameStartTime，同时初始化整个游戏，游戏初始化化后还不能开始，等到了GameStartTime才开始update，这个GameStartTime的设计就是为了考虑Server发给Client的延迟以及Client自己初始化的延迟，尽力保证Server和Client都是同步的
+1. 启动Server，Server会等待一定数量的Client连接
+2. 启动多个client，然后所有Client处于等待连接服务器的状态，不断向服务器地址发送自己的连接请求
+3. Server被一定数量的Client连接后，会向所有Client发送游戏就绪的信号
+4. Client收到就绪的信号后会停止发送连接请求，然后初始化游戏（加载资源和关卡），此时Client进入Loading界面，画面显示当前这局游戏总共有多少玩家参与以及加载进度，
+5. Client loading结束后发送一个信号给Server，告诉Server自己已经loading 结束，随时可以开始游戏
+5. Server收到所有Client的准备好信号后，会计算当前时间500ms后的时间戳，这个叫时间戳叫 GameStartTime，然后封装进游戏开始的信号，广播给所有Client
+5. Client收到游戏开始的信号后，提取出GameStartTime，等到了GameStartTime才开始逻辑update，第一个tick是进入到游戏画面，这个GameStartTime的设计就是为了考虑Server发给Client的延迟，尽力保证Server和Client都是同步的
 
 
 
 
 如果 Client 等待input的时间过长，并且自身还没掉线（心跳确定），那么判断自己就是tick落后了，会从服务器中请求最近的关键帧状态以及之后的所有input，并且开始追帧
+
