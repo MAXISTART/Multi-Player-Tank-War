@@ -55,7 +55,8 @@ class GameServer:
                 # 发送游戏准备消息
                 ready_message = {
                     'type': 'game_ready',
-                    'players': len(self.clients)
+                    'players': len(self.clients),
+                    'clients': list(self.clients.values())
                 }
                 print(f"[Server] Broadcasting game_ready message to {len(self.clients)} players")
                 await self.broadcast(ready_message)
@@ -133,10 +134,28 @@ class GameServer:
 
         elif msg_type == 'input':
             # 处理客户端输入
-            frame = data.get('frame')
             inputs = data.get('inputs')
-            print(f"[Server] Input from {client_id} for frame {frame}")
-            self.frame_manager.receive_input(client_id, frame, inputs)
+            print(f"[Server] Input from {client_id}: {inputs}")
+            self.frame_manager.receive_input(client_id, inputs)
+
+        elif msg_type == 'request_frames':
+            # 处理客户端请求帧数据
+            requested_frames = data.get('frames', [])
+            print(f"[Server] Client {client_id} requested frames: {requested_frames}")
+
+            response = {}
+            for frame in requested_frames:
+                frame_data = self.frame_manager.collect_inputs_for_frame(frame)
+                if frame_data:
+                    response.update(frame_data)
+
+            if response:
+                response_message = {
+                    'type': 'frame_response',
+                    'frames': response
+                }
+                await websocket.send(json.dumps(response_message))
+                print(f"[Server] Sent requested frames to client {client_id}: {list(response.keys())}")
 
     async def broadcast(self, message):
         """向所有客户端广播消息"""
@@ -177,7 +196,6 @@ class GameServer:
         """游戏主循环"""
         debug_interval = 5  # 每5秒打印一次调试信息
         last_debug_time = 0
-        initial_frame_sent = False  # 追踪是否已发送初始帧数据
 
         while True:
             current_time = int(time.time())
@@ -194,28 +212,25 @@ class GameServer:
 
                 # 只有在游戏开始时间已过后才进行帧更新
                 if elapsed_time >= 0:
-                    # 第一次运行时立即发送第0帧的数据
-                    if not initial_frame_sent:
-                        print("[Server] Sending initial frame data (frame 0)")
-                        initial_frame_sent = True
-                        input_message = self.frame_manager.prepare_input_broadcast()
-                        await self.broadcast(input_message)
-                        print("[Server] Initial frame data sent")
+                    # 计算当前应该处于哪一帧
+                    frames_should_have_passed = int(elapsed_time * LOGIC_TICK_RATE / 1000)
 
-                    frames_elapsed = elapsed_time * LOGIC_TICK_RATE // 1000
+                    # 更新到当前应该的帧
+                    if frames_should_have_passed > self.frame_manager.current_frame:
+                        self.frame_manager.current_frame = frames_should_have_passed
 
-                    # 仅当需要更新时广播帧更新
-                    if frames_elapsed > self.frame_manager.current_frame:
-                        # 更新到当前应该的帧
-                        self.frame_manager.current_frame = frames_elapsed
+                        # 检查是否到达了新的turn
+                        current_turn = frames_should_have_passed // self.frame_manager.turn_size
 
-                        # 检查是否需要广播输入帧（每turn_size帧一次）
-                        current_input_frame = (
-                                                          frames_elapsed // self.frame_manager.turn_size) * self.frame_manager.turn_size
+                        # 如果到达了新的turn，先处理输入
+                        if frames_should_have_passed % self.frame_manager.turn_size == 0:
+                            # 处理当前turn的输入
+                            self.frame_manager.process_inputs_for_turn(current_turn)
 
-                        if current_input_frame > self.frame_manager.last_broadcast_frame:
+                            # 广播输入帧
+                            current_frame = frames_should_have_passed
                             input_message = self.frame_manager.prepare_input_broadcast()
-                            print(f"[Server] Broadcasting inputs for frame {current_input_frame}")
+                            print(f"[Server] Broadcasting inputs for frame {current_frame}")
                             await self.broadcast(input_message)
 
             # 短暂等待避免CPU占用过高
@@ -251,7 +266,7 @@ class GameServer:
 async def main():
     # 可以通过命令行参数来指定所需的玩家数量
     import sys
-    required_players = 2  # 默认为2
+    required_players = 1  # 默认为2
     if len(sys.argv) > 1:
         try:
             required_players = int(sys.argv[1])

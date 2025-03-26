@@ -5,18 +5,17 @@ from common.constants import *
 
 class InputManager:
     def __init__(self):
-        self.current_inputs = {}
-        self.previous_inputs = {}
-        self.input_changed = False
+        self.current_inputs = {'movement': 'stop', 'shoot': False}
+        self.previous_inputs = {'movement': 'stop', 'shoot': False}
+        self.has_non_empty_input = False
 
-    # client/frame_sync/input_manager.py
     def capture_input(self):
         """捕获当前帧的用户输入"""
         keys = pygame.key.get_pressed()
 
-        # 清空当前输入
+        # 备份上一帧的输入
         self.previous_inputs = self.current_inputs.copy()
-        self.current_inputs = {}
+        self.current_inputs = {'movement': 'stop', 'shoot': False}  # 默认为空输入
 
         # 移动输入
         if keys[pygame.K_w] or keys[pygame.K_UP]:
@@ -39,16 +38,20 @@ class InputManager:
         if keys[pygame.K_SPACE]:
             print("[Input] Captured: SHOOT")
 
-        # 检查输入是否变化
-        self.input_changed = self.current_inputs != self.previous_inputs
-        if self.input_changed:
-            print(f"[Input] Input changed: {self.current_inputs}")
+        # 检查输入是否为非空
+        self.has_non_empty_input = not self.is_input_empty(self.current_inputs)
+        if self.has_non_empty_input:
+            print(f"[Input] Non-empty input captured: {self.current_inputs}")
 
         return self.current_inputs
 
-    def has_input_changed(self):
-        """检查输入是否与上一帧相比发生变化"""
-        return self.input_changed
+    def is_input_non_empty(self):
+        """检查输入是否非空"""
+        return self.has_non_empty_input
+
+    def is_input_empty(self, inputs):
+        """检查输入是否为空（默认状态）"""
+        return inputs['movement'] == 'stop' and not inputs['shoot']
 
     def serialize_input(self):
         """将输入序列化为可传输格式"""

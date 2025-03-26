@@ -31,6 +31,8 @@ class GameClient:
         self.game_ready = False
         self.game_start_time = 0
         self.players_count = 0
+        self.player_id = None
+        self.all_client_ids = []
 
         # 加载状态
         self.loading_progress = 0
@@ -71,15 +73,22 @@ class GameClient:
             connected = await self.network_client.connect_with_retry()
             if connected:
                 print("[Client] Connected to server")
+                await self.network_client.send_connect_request()
                 break
             await asyncio.sleep(1)  # 避免过于频繁的连接尝试
 
-    def on_game_ready(self, players):
+    def on_client_id_received(self, client_id):
+        """处理收到客户端ID"""
+        self.player_id = client_id
+        print(f"[Client] Client ID set to: {self.player_id}")
+
+    def on_game_ready(self, players, client_ids):
         """处理游戏准备就绪信号"""
         print(f"[Client] Received game_ready with {players} players")
         self.game_ready = True
         self.waiting_for_connection = False
         self.players_count = players
+        self.all_client_ids = client_ids
 
         # 转换到加载状态
         self.game_state = STATE_LOADING
@@ -97,9 +106,14 @@ class GameClient:
             print(f"[Client] Loading progress: {self.loading_progress * 100:.0f}%")
             await asyncio.sleep(0.1)  # 模拟加载延迟
 
-        # 加载完成
+        # 加载完成，初始化游戏
         self.loading_complete = True
-        print(f"[Client] Loading complete, sending client_ready")
+        print(f"[Client] Loading complete, initializing game")
+
+        # 初始化游戏，但不开始执行逻辑
+        self.initialize_game()
+
+        print(f"[Client] Game initialized, sending client_ready")
 
         # 发送客户端准备就绪消息
         await self.network_client.send_client_ready()
@@ -110,8 +124,8 @@ class GameClient:
         self.game_start_time = start_time
         self.players_count = players
 
-        # 初始化游戏，但不立即切换状态
-        self.initialize_game()
+        # 设置帧执行器的开始时间
+        self.frame_executor.set_start_time(start_time)
 
         current_time = int(time.time() * 1000)
         time_until_start = start_time - current_time
@@ -128,38 +142,41 @@ class GameClient:
 
         # 只有在游戏状态且非暂停时才执行帧逻辑
         if self.game_state == STATE_PLAYING and not self.paused:
-            # 捕获输入并发送给服务器
+            # 捕获输入并发送给服务器（仅当输入非空时）
             inputs = self.input_manager.capture_input()
-            if self.input_manager.has_input_changed():
-                current_frame = self.frame_executor.current_frame
-                print(f"[Client] Sending input for frame {current_frame}: {inputs}")
-                asyncio.create_task(self.network_client.send_input(current_frame, inputs))
+            if self.input_manager.is_input_non_empty():
+                print(f"[Client] Sending non-empty input: {inputs}")
+                asyncio.create_task(self.network_client.send_input(inputs))
 
-            # 执行当前帧
-            frame_executed = self.frame_executor.execute_frame()
-            if not frame_executed:
-                print(f"[Client] Frame {self.frame_executor.current_frame} execution paused, waiting for input")
+            # 执行帧更新
+            self.frame_executor.execute_logic_frame()
 
     def on_input_frame(self, frame, inputs):
-        """处理输入帧"""
-        print(f"[Client] Processing input frame {frame} with {len(inputs)} frames of data")
+        """处理输入帧
+        inputs格式: {client_id: [inputs1, inputs2, ...]}
+        """
+        print(f"[Client] Processing input frame {frame} with {len(inputs)} clients")
 
         # 检查并输出接收到的具体帧数据
-        for frame_num, frame_data in inputs.items():
-            print(f"[Client] Received input for frame {frame_num}: {frame_data}")
-
-        # 将字符串键转换为整数键
-        numeric_inputs = {}
-        for frame_num, frame_data in inputs.items():
-            numeric_inputs[int(frame_num)] = frame_data
+        for client_id, inputs_list in inputs.items():
+            print(f"[Client] Received {len(inputs_list)} inputs for client {client_id} at frame {frame}")
 
         # 添加到帧执行器
-        self.frame_executor.add_input_frame(frame, numeric_inputs)
+        self.frame_executor.add_input_frame(frame, inputs)
 
-        # 如果游戏状态是PLAYING且帧执行器在等待输入，尝试恢复执行
-        if self.game_state == STATE_PLAYING and self.frame_executor.waiting_for_input:
-            print(f"[Client] Attempting to resume frame execution after receiving inputs")
-            self.frame_executor.execute_frame()
+    def on_frame_response(self, frames):
+        """处理服务器响应的帧请求"""
+        print(f"[Client] Processing frame response with {len(frames)} frames")
+
+        # 添加到帧执行器
+        for frame_num_str, frame_data in frames.items():
+            frame_num = int(frame_num_str)
+            print(f"[Client] Adding frame response data for frame {frame_num}")
+            self.frame_executor.add_input_frame(frame_num, frame_data)
+
+    def send_message(self, message):
+        """发送消息到服务器（供帧执行器调用）"""
+        asyncio.create_task(self.network_client.send_message(message))
 
     def initialize_game(self):
         """初始化游戏状态"""
@@ -168,23 +185,59 @@ class GameClient:
         self.map.generate_random_map(seed=42)  # 使用固定种子确保所有客户端生成相同地图
 
         # 创建坦克等游戏对象
-        # 注意：实际实现中应该由服务器分配坦克位置和ID
-        # 这里简化处理，仅用于示例
         spawn_points = self.map.get_spawn_points()
-        if spawn_points:
-            self.player_tank = Tank(spawn_points[0][0], spawn_points[0][1], 'blue', tank_id="player", is_player=True)
+
+        # 根据玩家ID和位置创建坦克
+        try:
+            player_index = self.all_client_ids.index(self.player_id)
+        except ValueError:
+            player_index = 0
+            print(f"[Client WARNING] Player ID {self.player_id} not found in client list!")
+
+        if spawn_points and player_index < len(spawn_points):
+            self.player_tank = Tank(
+                spawn_points[player_index][0],
+                spawn_points[player_index][1],
+                'blue',
+                tank_id=self.player_id,
+                is_player=True
+            )
         else:
-            print("[Client ERROR] No spawn points found!")
-            self.player_tank = Tank(100, 100, 'blue', tank_id="player", is_player=True)
+            print("[Client ERROR] No suitable spawn point found!")
+            # 默认位置
+            self.player_tank = Tank(100, 100, 'blue', tank_id=self.player_id, is_player=True)
 
-        # 重置游戏状态
-        self.bullets = []
+        # 创建敌方坦克
         self.enemy_tanks = []
+        for i, client_id in enumerate(self.all_client_ids):
+            if client_id != self.player_id:
+                # 选择不同于玩家的颜色
+                tank_color = 'red' if i % 3 == 0 else 'green' if i % 3 == 1 else 'yellow'
 
-        print(f"[Client] Game initialized, waiting for start time")
+                # 为敌方坦克选择生成点
+                if i < len(spawn_points):
+                    enemy_tank = Tank(
+                        spawn_points[i][0],
+                        spawn_points[i][1],
+                        tank_color,
+                        tank_id=client_id,
+                        is_player=False
+                    )
+                    self.enemy_tanks.append(enemy_tank)
+                    print(f"[Client] Created enemy tank for {client_id} at spawn point {i}")
+                else:
+                    print(f"[Client ERROR] No spawn point for enemy tank {client_id}!")
+
+        # 重置子弹列表
+        self.bullets = []
+
+        print(f"[Client] Game initialized with {len(self.enemy_tanks)} enemy tanks")
 
     def update_game_state(self):
         """更新游戏状态（由帧执行器调用）"""
+        # 应用逻辑输入到游戏对象
+        self.frame_executor.apply_inputs_to_game_objects()
+
         # 更新粒子系统
         particle_system.update(LOGIC_DELTA_TIME)
 
@@ -250,9 +303,14 @@ class GameClient:
         title_text = self.font.render("Loading Game...", True, COLOR_WHITE)
         self.screen.blit(title_text, (SCREEN_WIDTH / 2 - title_text.get_width() / 2, 100))
 
+        # 绘制玩家ID
+        if self.player_id:
+            player_id_text = self.font.render(f"Your Player ID: {self.player_id[:8]}...", True, COLOR_WHITE)
+            self.screen.blit(player_id_text, (SCREEN_WIDTH / 2 - player_id_text.get_width() / 2, 150))
+
         # 绘制玩家数量
         players_text = self.font.render(f"Players in game: {self.players_count}", True, COLOR_WHITE)
-        self.screen.blit(players_text, (SCREEN_WIDTH / 2 - players_text.get_width() / 2, 150))
+        self.screen.blit(players_text, (SCREEN_WIDTH / 2 - players_text.get_width() / 2, 200))
 
         # 绘制进度条背景
         progress_bar_width = 400
@@ -317,10 +375,12 @@ class GameClient:
         # 基本状态信息
         debug_texts = [
             f"Game State: {self.game_state}",
+            f"Player ID: {self.player_id[:8] if self.player_id else 'None'}",
             f"Frame: {self.frame_executor.current_frame}",
+            f"Latest Received: {self.frame_executor.latest_received_frame}",
             f"Waiting: {self.frame_executor.waiting_for_input}",
             f"Players: {self.players_count}",
-            f"Buffer Size: {len(self.frame_executor.input_buffer)}"
+            f"Input Buffer Size: {len(self.frame_executor.input_buffer)}"
         ]
 
         # 绘制所有文本
@@ -341,10 +401,6 @@ class GameClient:
                 elif event.key == pygame.K_p and self.game_state == STATE_PLAYING:
                     self.paused = not self.paused
 
-        # 如果游戏已经开始，捕获并发送输入
-        if self.game_state == STATE_PLAYING and not self.paused:
-            self.input_manager.capture_input()
-
     async def game_loop(self):
         """游戏主循环"""
         while self.running:
@@ -358,8 +414,7 @@ class GameClient:
             self.render()
 
             # 控制帧率
-            self.clock.tick(LOGIC_TICK_RATE)
-            await asyncio.sleep(0)  # 让出控制权给其他协程
+            await asyncio.sleep(1 / 120)  # 尝试以120fps运行渲染循环
 
         # 游戏结束，断开连接
         await self.network_client.disconnect()

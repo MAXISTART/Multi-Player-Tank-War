@@ -8,7 +8,7 @@ SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 LOGIC_TICK_RATE = 60  # 游戏逻辑更新帧率
 LOGIC_DELTA_TIME = 1 / 60  # 游戏逻辑更新的Delta Time
-TURN_SIZE = 6    # 每个回合包含的帧数（每隔多少帧同步一次）
+TURN_SIZE = 5    # 每个回合包含的帧数（每隔多少帧同步一次）
 
 # 游戏目录
 RESOURCES_DIR = "resources"

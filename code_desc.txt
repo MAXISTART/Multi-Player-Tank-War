@@ -17,49 +17,67 @@ class FrameExecutor:
 
     def add_input_frame(self, frame, inputs):
         """添加从服务器接收的输入帧"""
-        for frame_num, frame_inputs in inputs.items():
-            self.input_buffer[int(frame_num)].update(frame_inputs)
+        print(f"[FrameExecutor] Adding input frame data with {len(inputs)} frames")
+
+        # 记录接收到的每个帧的输入
+        for frame_num_str, frame_inputs in inputs.items():
+            frame_num = int(frame_num_str)
+            self.input_buffer[frame_num] = frame_inputs
+            print(f"[FrameExecutor] Added inputs for frame {frame_num}: {frame_inputs}")
 
         # 如果正在等待输入，尝试恢复执行
         if self.waiting_for_input:
+            print(f"[FrameExecutor] Was waiting for input, trying to resume execution")
             self.execute_frame()
+
+        # 打印当前输入缓冲区状态
+        self.debug_print_input_buffer()
 
     def execute_frame(self):
         """执行当前帧的游戏逻辑"""
-        # 检查是否需要处理输入（每turn_size帧一次）
-        current_turn = self.current_frame // self.turn_size
+        print(f"[FrameExecutor] Executing frame {self.current_frame}")
 
-        if current_turn > self.last_executed_turn:
-            # 需要新的输入数据
-            start_frame = current_turn * self.turn_size
-            end_frame = start_frame + self.turn_size - 1
+        # 检查是否是输入帧（turn_size的倍数）
+        is_input_frame = self.current_frame % self.turn_size == 0
 
-            # 检查是否有所有需要的帧
-            has_all_frames = True
-            for frame in range(start_frame, end_frame + 1):
-                if frame not in self.input_buffer:
-                    has_all_frames = False
-                    break
+        if is_input_frame:
+            print(f"[FrameExecutor] Frame {self.current_frame} is an input frame")
 
-            if not has_all_frames:
-                # 没有收到所有需要的输入帧，停止执行逻辑
+            # 检查当前帧的输入是否存在
+            if self.current_frame in self.input_buffer:
+                print(f"[FrameExecutor] Found input for frame {self.current_frame}")
+
+                # 应用所有客户端的输入
+                for client_id, inputs in self.input_buffer[self.current_frame].items():
+                    self.apply_input(client_id, inputs)
+                    print(f"[FrameExecutor] Applied input from client {client_id} for frame {self.current_frame}")
+
+                # 更新游戏状态
+                self.game_client.update_game_state()
+
+                # 增加帧计数
+                self.current_frame += 1
+                print(f"[FrameExecutor] Advanced to frame {self.current_frame}")
+
+                # 不再等待输入
+                self.waiting_for_input = False
+                return True
+            else:
+                # 输入帧但没有找到输入，需要等待
+                print(f"[FrameExecutor] Input frame {self.current_frame} but no input found, waiting")
                 self.waiting_for_input = True
                 return False
+        else:
+            # 非输入帧，仅更新游戏状态，不处理输入
+            print(f"[FrameExecutor] Non-input frame {self.current_frame}, updating game state without input processing")
 
-            # 有所有需要的帧，继续执行
-            self.waiting_for_input = False
-            self.last_executed_turn = current_turn
+            # 更新游戏状态
+            self.game_client.update_game_state()
 
-            # 应用所有客户端的输入
-            for client_id, inputs in self.input_buffer[self.current_frame].items():
-                self.apply_input(client_id, inputs)
-
-        # 更新游戏状态
-        self.game_client.update_game_state()
-
-        # 增加帧计数
-        self.current_frame += 1
-        return True
+            # 增加帧计数
+            self.current_frame += 1
+            print(f"[FrameExecutor] Advanced to frame {self.current_frame}")
+            return True
 
     def apply_input(self, client_id, inputs):
         """将输入应用到对应的游戏对象"""
@@ -76,10 +94,20 @@ class FrameExecutor:
         # 应用输入
         if tank:
             tank.apply_input(inputs)
+            print(f"[FrameExecutor] Applied input to tank {tank.tank_id}: {inputs}")
 
             # 处理射击
             if inputs.get('shoot'):
                 self.game_client.handle_tank_shoot(tank)
+        else:
+            print(f"[FrameExecutor] No tank found for client {client_id}")
+
+    def debug_print_input_buffer(self):
+        """打印当前输入缓冲区状态"""
+        print(f"[Debug] Input Buffer Status - Current Frame: {self.current_frame}")
+        for frame in sorted(self.input_buffer.keys()):
+            inputs = self.input_buffer[frame]
+            print(f"  Frame {frame}: {inputs}")
 
 文件名: client/frame_sync/input_manager.py
 文件内容
@@ -139,224 +167,6 @@ class InputManager:
     def serialize_input(self):
         """将输入序列化为可传输格式"""
         return self.current_inputs
-
-文件名: client/frame_sync/state_synchronizer.py
-文件内容
-======================================================================
-# state_synchronizer.py
-"""
-状态同步器模块：处理客户端与服务器之间的状态同步
-
-主要功能：
-- 发送本地输入到服务器
-- 接收和应用服务器状态更新
-- 处理预测和校正
-"""
-
-import time
-import pygame
-from common.frame_data import InputFrame, StateFrame
-from common.protocol import create_input_message, NetworkLatencyEstimator
-
-
-class StateSynchronizer:
-    """
-    状态同步器：处理客户端与服务器之间的状态同步
-
-    主要功能：
-    - 管理本地和远程状态
-    - 处理状态校正
-    - 发送输入和接收状态更新
-    """
-
-    def __init__(self, network_client, frame_executor, input_manager, local_player_id):
-        """
-        初始化状态同步器
-
-        Args:
-            network_client: 网络客户端对象
-            frame_executor: 帧执行器
-            input_manager: 输入管理器
-            local_player_id: 本地玩家ID
-        """
-        self.network_client = network_client
-        self.frame_executor = frame_executor
-        self.input_manager = input_manager
-        self.local_player_id = local_player_id
-
-        # 状态同步参数
-        self.input_delay = 2  # 本地输入延迟帧数
-        self.prediction_window = 10  # 预测窗口大小
-
-        # 网络延迟估计
-        self.latency_estimator = NetworkLatencyEstimator()
-
-        # 状态指标
-        self.correction_count = 0
-        self.last_mismatch_time = 0
-        self.mismatch_count = 0
-
-    def send_input(self, frame_id, input_command):
-        """
-        发送输入命令到服务器
-
-        Args:
-            frame_id: 帧ID
-            input_command: 输入命令
-        """
-        # 创建输入消息
-        input_message = create_input_message(
-            player_id=self.local_player_id,
-            frame_id=frame_id,
-            input_command=input_command
-        )
-
-        # 发送消息
-        self.network_client.send_message(input_message)
-
-        # 存储输入到本地历史
-        self.input_manager.store_input(frame_id, input_command)
-
-        # 创建并添加输入帧到帧执行器
-        input_frame = InputFrame(frame_id=frame_id)
-        input_frame.add_command(self.local_player_id, input_command)
-        self.frame_executor.add_input_frame(input_frame)
-
-    def apply_state_update(self, state_frame):
-        """
-        应用服务器的状态更新
-
-        Args:
-            state_frame: 状态帧
-
-        Returns:
-            bool: 是否需要进行状态校正
-        """
-        # 添加状态帧到帧执行器
-        self.frame_executor.add_state_frame(state_frame)
-
-        # 更新确认帧
-        self.frame_executor.set_confirmed_frame(state_frame.frame_id)
-
-        # 检查是否需要状态校正
-        need_correction = self._check_state_mismatch(state_frame)
-
-        if need_correction:
-            # 执行状态校正
-            self._perform_correction(state_frame)
-            self.correction_count += 1
-
-        return need_correction
-
-    def _check_state_mismatch(self, server_state_frame):
-        """
-        检查本地状态与服务器状态是否不匹配
-
-        Args:
-            server_state_frame: 服务器发送的状态帧
-
-        Returns:
-            bool: 如果状态不匹配则返回True
-        """
-        # 如果服务器帧比本地执行的帧新，不进行校验
-        if server_state_frame.frame_id > self.frame_executor.last_executed_frame_id:
-            return False
-
-        # 如果服务器帧太旧，不进行校验
-        if server_state_frame.frame_id < self.frame_executor.last_executed_frame_id - self.prediction_window:
-            return False
-
-        # 获取本地状态帧
-        local_state_frame = self.frame_executor.frame_buffer.get_state_frame(server_state_frame.frame_id)
-
-        # 如果没有本地帧，需要校正
-        if not local_state_frame:
-            return True
-
-        # 比较状态校验和
-        if local_state_frame.checksum != server_state_frame.checksum:
-            # 记录不匹配
-            current_time = time.time()
-            if current_time - self.last_mismatch_time > 5:  # 每5秒最多记录一次
-                self.last_mismatch_time = current_time
-                self.mismatch_count += 1
-                print(f"State mismatch at frame {server_state_frame.frame_id}")
-            return True
-
-        return False
-
-    def _perform_correction(self, server_state_frame):
-        """
-        执行状态校正
-
-        Args:
-            server_state_frame: 服务器发送的状态帧
-        """
-        # 回滚到服务器帧，并重新执行
-        target_frame_id = self.frame_executor.current_frame_id - 1
-
-        # 加载服务器状态
-        self.frame_executor.game_engine.load_state(server_state_frame.game_state)
-
-        # 更新执行状态
-        self.frame_executor.last_executed_frame_id = server_state_frame.frame_id
-
-        # 执行到当前帧
-        if target_frame_id > server_state_frame.frame_id:
-            self.frame_executor.execute_frame(target_frame_id)
-
-    def update(self, events, keys_pressed):
-        """
-        更新状态同步
-
-        Args:
-            events: pygame事件列表
-            keys_pressed: pygame按键状态
-
-        Returns:
-            bool: 是否有新的帧执行
-        """
-        # 计算目标帧（考虑输入延迟）
-        target_frame_id = self.frame_executor.current_frame_id + self.input_delay
-
-        # 捕获当前输入
-        input_command = self.input_manager.capture_input(events, keys_pressed)
-
-        # 发送输入到服务器
-        self.send_input(target_frame_id, input_command)
-
-        # 执行当前帧（帧执行器内部会决定是否需要回滚）
-        frame_executed = self.frame_executor.execute_frame()
-
-        return frame_executed
-
-    def get_statistics(self):
-        """
-        获取同步统计信息
-
-        Returns:
-            dict: 同步统计信息
-        """
-        return {
-            'current_frame': self.frame_executor.current_frame_id,
-            'confirmed_frame': self.frame_executor.last_confirmed_frame_id,
-            'input_delay': self.input_delay,
-            'latency': self.latency_estimator.get_average_rtt(),
-            'corrections': self.correction_count,
-            'mismatches': self.mismatch_count,
-            'rollbacks': self.frame_executor.rollback_count
-        }
-
-    def adjust_input_delay(self):
-        """根据网络延迟自动调整输入延迟"""
-        # 获取平均往返时间（毫秒）
-        avg_rtt = self.latency_estimator.get_average_rtt()
-
-        # 计算需要的帧数（每帧33.3ms，对应30FPS）
-        frames_needed = int(avg_rtt / (1000 / LOGIC_TICK_RATE))) + 1
-
-        # 确保最小延迟
-        self.input_delay = max(2, min(frames_needed, 10))
 
 文件名: client/game_engine/bullet.py
 文件内容
@@ -2203,7 +2013,30 @@ class NetworkClient:
         print("[Client] Attempting to reconnect...")
         self.connected = False
         self.retry_count = 0  # 重置重试计数
-        await self.connect_with_retry()
+        await self.reconnect_with_exponential_backoff()
+
+    async def reconnect_with_exponential_backoff(self):
+        """使用指数退避策略进行重连"""
+        retry_delay = 1.0  # 初始延迟1秒
+        max_delay = 30.0  # 最大延迟30秒
+
+        while self.retry_count < self.max_retries and not self.connected:
+            print(
+                f"[Client] Reconnecting attempt {self.retry_count + 1}/{self.max_retries}, waiting {retry_delay:.1f}s...")
+            await asyncio.sleep(retry_delay)
+
+            success = await self.connect_with_retry()
+            if success:
+                print("[Client] Reconnected successfully!")
+                return True
+
+            # 增加延迟，但不超过最大值
+            retry_delay = min(retry_delay * 1.5, max_delay)
+            self.retry_count += 1
+
+        if not self.connected:
+            print("[Client] Failed to reconnect after multiple attempts")
+        return self.connected
 
     async def receiver(self):
         """接收服务器消息"""
@@ -2256,15 +2089,22 @@ class NetworkClient:
             start_time = data.get('start_time')
             players = data.get('players', 0)
             current_time = int(time.time() * 1000)
-            print(f"[Client] Game will start at {start_time}, Current time: {current_time}, Delta: {start_time - current_time}ms")
+            print(
+                f"[Client] Game will start at {start_time}, Current time: {current_time}, Delta: {start_time - current_time}ms")
             self.game_client.on_game_start(start_time, players)
 
         elif msg_type == 'input_frame':
             # 输入帧
             current_frame = data.get('current_frame')
             inputs = data.get('inputs', {})
-            inputs_count = sum(len(frame_inputs) for client_id, frame_inputs in inputs.items() if isinstance(frame_inputs, dict))
+            inputs_count = sum(
+                len(frame_inputs) for client_id, frame_inputs in inputs.items() if isinstance(frame_inputs, dict))
             print(f"[Client] Received input frame for frame {current_frame}, inputs count: {inputs_count}")
+
+            # 详细输出每个帧的输入，便于调试
+            for frame_num, frame_data in inputs.items():
+                print(f"[Client] Frame {frame_num} has inputs: {frame_data}")
+
             self.game_client.on_input_frame(current_frame, inputs)
 
     async def send_connect_request(self):
@@ -2692,7 +2532,24 @@ class GameClient:
 
     def on_input_frame(self, frame, inputs):
         """处理输入帧"""
-        self.frame_executor.add_input_frame(frame, inputs)
+        print(f"[Client] Processing input frame {frame} with {len(inputs)} frames of data")
+
+        # 检查并输出接收到的具体帧数据
+        for frame_num, frame_data in inputs.items():
+            print(f"[Client] Received input for frame {frame_num}: {frame_data}")
+
+        # 将字符串键转换为整数键
+        numeric_inputs = {}
+        for frame_num, frame_data in inputs.items():
+            numeric_inputs[int(frame_num)] = frame_data
+
+        # 添加到帧执行器
+        self.frame_executor.add_input_frame(frame, numeric_inputs)
+
+        # 如果游戏状态是PLAYING且帧执行器在等待输入，尝试恢复执行
+        if self.game_state == STATE_PLAYING and self.frame_executor.waiting_for_input:
+            print(f"[Client] Attempting to resume frame execution after receiving inputs")
+            self.frame_executor.execute_frame()
 
     def initialize_game(self):
         """初始化游戏状态"""
@@ -2719,19 +2576,19 @@ class GameClient:
     def update_game_state(self):
         """更新游戏状态（由帧执行器调用）"""
         # 更新粒子系统
-        particle_system.update(1 / 60)
+        particle_system.update(LOGIC_DELTA_TIME)
 
         # 更新坦克
         if self.player_tank:
-            self.player_tank.update(1 / 60)
+            self.player_tank.update(LOGIC_DELTA_TIME)
 
         for tank in self.enemy_tanks:
-            tank.update(1 / 60)
+            tank.update(LOGIC_DELTA_TIME)
 
         # 更新子弹
         current_bullets = []
         for bullet in self.bullets:
-            hit_type, hit_obj = bullet.update(1 / 60, self.map.obstacles if self.map else [],
+            hit_type, hit_obj = bullet.update(LOGIC_DELTA_TIME, self.map.obstacles if self.map else [],
                                               [self.player_tank] + self.enemy_tanks if self.player_tank else [])
             if bullet.active:
                 current_bullets.append(bullet)
@@ -2891,7 +2748,7 @@ class GameClient:
             self.render()
 
             # 控制帧率
-            self.clock.tick(FPS)
+            self.clock.tick(LOGIC_TICK_RATE)
             await asyncio.sleep(0)  # 让出控制权给其他协程
 
         # 游戏结束，断开连接
@@ -2919,9 +2776,8 @@ if __name__ == "__main__":
 # 游戏常量
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
-FPS = 60
-TICK_RATE = 30  # 游戏逻辑更新率
-FRAME_RATE = 60  # 网络帧同步率（与FPS保持一致）
+LOGIC_TICK_RATE = 60  # 游戏逻辑更新帧率
+LOGIC_DELTA_TIME = 1 / 60  # 游戏逻辑更新的Delta Time
 TURN_SIZE = 6    # 每个回合包含的帧数（每隔多少帧同步一次）
 
 # 游戏目录
@@ -4567,7 +4423,6 @@ if __name__ == "__main__":
 # server/frame_sync/frame_manager.py
 import time
 from collections import defaultdict
-from common.constants import FRAME_RATE
 
 
 class FrameManager:
@@ -4579,6 +4434,7 @@ class FrameManager:
         self.ready_clients = set()  # 准备好的客户端
         self.game_started = False
         self.game_start_time = 0
+        self.last_broadcast_frame = -1  # 上次广播的帧
 
     def add_client(self, client_id, client_session):
         """添加客户端连接"""
@@ -4593,7 +4449,11 @@ class FrameManager:
 
     def receive_input(self, client_id, frame, inputs):
         """接收客户端输入"""
-        self.input_buffer[frame][client_id] = inputs
+        # 将输入存储到下一个应该处理输入的帧
+        next_input_frame = ((frame // self.turn_size) + 1) * self.turn_size
+        self.input_buffer[next_input_frame][client_id] = inputs
+        print(
+            f"[FrameManager] Stored input from client {client_id} at frame {frame} for future frame {next_input_frame}: {inputs}")
 
     def mark_client_ready(self, client_id):
         """标记客户端已准备好"""
@@ -4606,34 +4466,55 @@ class FrameManager:
         """开始游戏，设置开始时间"""
         self.game_started = True
         self.game_start_time = int(time.time() * 1000) + delay_ms
+
+        # 为每个客户端在第0帧添加默认输入
+        default_input = {'movement': 'stop', 'shoot': False}
+        for client_id in self.clients:
+            self.input_buffer[0][client_id] = default_input
+            print(f"[FrameManager] Added default input for client {client_id} at frame 0")
+
         print(f"[FrameManager] Game starting at {self.game_start_time} (current time + {delay_ms}ms)")
+        self.debug_print_input_buffer()
         return self.game_start_time
 
     def prepare_input_broadcast(self):
         """准备广播给所有客户端的输入数据"""
-        # 计算本次广播包含的帧范围
-        start_frame = self.current_frame - self.turn_size + 1
-        end_frame = self.current_frame
+        # 确定需要广播的输入帧
+        current_turn = self.current_frame // self.turn_size
+        current_input_frame = current_turn * self.turn_size
 
-        # 收集这些帧的所有输入
+        # 收集这个输入帧的所有输入
         turn_inputs = {}
-        for frame in range(start_frame, end_frame + 1):
-            if frame in self.input_buffer and self.input_buffer[frame]:  # 确保有输入
-                turn_inputs[str(frame)] = self.input_buffer[frame]
+
+        # 特殊处理：始终包含第0帧
+        if 0 in self.input_buffer and self.input_buffer[0]:
+            turn_inputs["0"] = self.input_buffer[0]
+            print(f"[Server] Including frame 0 inputs in broadcast")
+
+        # 加入当前输入帧
+        if current_input_frame in self.input_buffer and self.input_buffer[current_input_frame]:
+            turn_inputs[str(current_input_frame)] = self.input_buffer[current_input_frame]
+            print(f"[Server] Including frame {current_input_frame} inputs in broadcast")
+        else:
+            # 如果当前帧没有输入，使用默认输入
+            default_input = {}
+            for client_id in self.clients:
+                default_input[client_id] = {'movement': 'stop', 'shoot': False}
+            turn_inputs[str(current_input_frame)] = default_input
+            print(f"[Server] Using default inputs for frame {current_input_frame}")
+
+        # 记录最后广播的帧
+        self.last_broadcast_frame = current_input_frame
 
         # 打印调试信息
         input_count = sum(len(inputs) for inputs in turn_inputs.values())
-        print(f"[Server] Prepared broadcast for frames {start_frame}-{end_frame} with {input_count} total inputs")
-
-        # 清理旧的输入缓存（可选，取决于是否需要保存用于回放）
-        for frame in list(self.input_buffer.keys()):
-            if frame <= self.current_frame - self.turn_size * 2:
-                del self.input_buffer[frame]
+        print(f"[Server] Prepared broadcast for input frame {current_input_frame} with {input_count} total inputs")
+        self.debug_print_input_buffer()
 
         # 返回需要广播的数据
         return {
             'type': 'input_frame',
-            'current_frame': self.current_frame,
+            'current_frame': current_input_frame,
             'inputs': turn_inputs
         }
 
@@ -4644,7 +4525,18 @@ class FrameManager:
         self.ready_clients = set()
         self.game_started = False
         self.game_start_time = 0
+        self.last_broadcast_frame = -1
         print("[FrameManager] Reset complete")
+
+    def debug_print_input_buffer(self):
+        """打印当前输入缓冲区状态"""
+        print(f"[Debug] Input Buffer Status - Current Frame: {self.current_frame}")
+        for frame in sorted(self.input_buffer.keys()):
+            inputs = self.input_buffer[frame]
+            client_count = len(inputs)
+            print(f"  Frame {frame}: {client_count} clients have inputs")
+            for client_id, client_input in inputs.items():
+                print(f"    Client {client_id}: {client_input}")
 
 文件名: server/frame_sync/validator.py
 文件内容
@@ -5103,7 +4995,7 @@ import time
 import uuid
 from collections import defaultdict
 from server.frame_sync.frame_manager import FrameManager
-from common.constants import FRAME_RATE
+from common.constants import LOGIC_TICK_RATE
 
 
 class GameServer:
@@ -5274,6 +5166,7 @@ class GameServer:
         """游戏主循环"""
         debug_interval = 5  # 每5秒打印一次调试信息
         last_debug_time = 0
+        initial_frame_sent = False  # 追踪是否已发送初始帧数据
 
         while True:
             current_time = int(time.time())
@@ -5290,17 +5183,28 @@ class GameServer:
 
                 # 只有在游戏开始时间已过后才进行帧更新
                 if elapsed_time >= 0:
-                    frames_elapsed = elapsed_time * FRAME_RATE // 1000
+                    # 第一次运行时立即发送第0帧的数据
+                    if not initial_frame_sent:
+                        print("[Server] Sending initial frame data (frame 0)")
+                        initial_frame_sent = True
+                        input_message = self.frame_manager.prepare_input_broadcast()
+                        await self.broadcast(input_message)
+                        print("[Server] Initial frame data sent")
+
+                    frames_elapsed = elapsed_time * LOGIC_TICK_RATE // 1000
 
                     # 仅当需要更新时广播帧更新
                     if frames_elapsed > self.frame_manager.current_frame:
                         # 更新到当前应该的帧
                         self.frame_manager.current_frame = frames_elapsed
 
-                        # 每turn_size帧广播一次输入
-                        if self.frame_manager.current_frame % self.frame_manager.turn_size == 0:
+                        # 检查是否需要广播输入帧（每turn_size帧一次）
+                        current_input_frame = (
+                                                          frames_elapsed // self.frame_manager.turn_size) * self.frame_manager.turn_size
+
+                        if current_input_frame > self.frame_manager.last_broadcast_frame:
                             input_message = self.frame_manager.prepare_input_broadcast()
-                            print(f"[Server] Broadcasting inputs for frame {self.frame_manager.current_frame}")
+                            print(f"[Server] Broadcasting inputs for frame {current_input_frame}")
                             await self.broadcast(input_message)
 
             # 短暂等待避免CPU占用过高
@@ -6131,7 +6035,7 @@ def main():
         screen.blit(controls_text, (10, SCREEN_HEIGHT - 30))
 
         pygame.display.flip()
-        clock.tick(FPS)
+        clock.tick(LOGIC_TICK_RATE)
 
     pygame.quit()
     sys.exit()

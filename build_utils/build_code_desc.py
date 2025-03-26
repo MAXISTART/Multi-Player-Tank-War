@@ -51,7 +51,7 @@ def collect_all_pyfile():
         if '.git' in root.split(os.sep):
             continue
 
-        if "build_utils" in root:
+        if "build_utils" in root or "test_utils" in root:
             # 跳过 build_utils 文件夹
             continue
 
@@ -59,7 +59,7 @@ def collect_all_pyfile():
             if file.endswith('.py'):
                 file_path = os.path.join(root, file)
                 res = file_path.replace("../", "").replace("\\", "/")
-                # print(res)
+                print(res)
                 ret.append(res)
     return ret
 

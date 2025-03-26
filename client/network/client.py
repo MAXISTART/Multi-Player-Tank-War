@@ -149,12 +149,14 @@ class NetworkClient:
             # 服务器欢迎消息，保存客户端ID
             self.client_id = data.get('client_id')
             print(f"[Client] Received client ID: {self.client_id}")
+            self.game_client.on_client_id_received(self.client_id)
 
         elif msg_type == 'game_ready':
             # 游戏准备就绪
             players = data.get('players', 0)
+            clients = data.get('clients', [])
             print(f"[Client] Game ready with {players} players")
-            self.game_client.on_game_ready(players)
+            self.game_client.on_game_ready(players, clients)
 
         elif msg_type == 'game_start':
             # 游戏开始
@@ -170,7 +172,7 @@ class NetworkClient:
             current_frame = data.get('current_frame')
             inputs = data.get('inputs', {})
             inputs_count = sum(
-                len(frame_inputs) for client_id, frame_inputs in inputs.items() if isinstance(frame_inputs, dict))
+                len(frame_inputs) for frame_num, frame_inputs in inputs.items() if isinstance(frame_inputs, dict))
             print(f"[Client] Received input frame for frame {current_frame}, inputs count: {inputs_count}")
 
             # 详细输出每个帧的输入，便于调试
@@ -178,6 +180,12 @@ class NetworkClient:
                 print(f"[Client] Frame {frame_num} has inputs: {frame_data}")
 
             self.game_client.on_input_frame(current_frame, inputs)
+
+        elif msg_type == 'frame_response':
+            # 响应请求的输入帧
+            frames = data.get('frames', {})
+            print(f"[Client] Received response for requested frames: {list(frames.keys())}")
+            self.game_client.on_frame_response(frames)
 
     async def send_connect_request(self):
         """发送连接请求"""
@@ -195,11 +203,19 @@ class NetworkClient:
         print("[Client] Sending client ready message")
         await self.send_message(message)
 
-    async def send_input(self, frame, inputs):
+    async def send_input(self, inputs):
         """发送输入到服务器"""
         message = {
             'type': 'input',
-            'frame': frame,
             'inputs': inputs
         }
+        await self.send_message(message)
+
+    async def request_frames(self, frames):
+        """请求特定帧的输入"""
+        message = {
+            'type': 'request_frames',
+            'frames': frames
+        }
+        print(f"[Client] Requesting frames: {frames}")
         await self.send_message(message)

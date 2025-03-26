@@ -1,22 +1,452 @@
-在推进里程碑2和3之前，我先确定整个同步框架的雏形
+我先确定整个同步框架的流程
 
-1. Server和Client的逻辑帧率都是60fps
+1. Server和Client的逻辑帧率都是60fps，其中，逻辑帧率和实际帧率是不同的，逻辑帧率类似FixedDeltaTime，保证每个逻辑更新的DeltaTime都是相同的
 2. Client只要有输入就往Server发送，Server拿到输入后会缓存起来。
-3. Server每5帧才向所有Client广播所有Client的输入(这5帧叫做一个turn)，这个广播的输入都需要附带上当前Server的帧号，而这种帧我们叫输入帧
-4. Client收到Server广播的消息后会缓存起来，自己update的时候，如果当前帧是应该处理输入的帧（比如当前是第五帧），则才从消息缓存中搜索该帧号对应的输入帧，找到的话就直接应用输入，找不到则停止逻辑更新，等待输入帧的到来
-5. 暂时不要进行预测和回滚（后面再优化）
+3. Server每5帧才向所有Client广播所有Client的输入(这5帧叫做一个turn)，这个广播的输入都需要附带上当前Server的帧号，而这种帧我们叫输入帧，另外就是，Client就算没有输入也要将空输入传过来
+4. Client类似一个帧播放器，正常情况下是按照本地逻辑帧率去播放，如果落后Server就追帧，如果超过Server的帧就等待。具体是这样的，Client收到Server广播的消息后会缓存起来，
+    实际更新：
+        检测当前收到的最新的输入帧ID：
+            如果当前自己的帧ID落后最新的输入帧ID，则进行开始追帧
+            如果当前自己的帧ID领先于最新的输入帧ID，则保持正常的逻辑更新
+
+        检测自己的当前帧：
+            如果当前帧是应该处理输入的帧（比如当前是第五帧），也就是刚经过一个turn，则才从消息缓存中搜索该帧号对应的输入帧，找到的话就将输入缓存到逻辑输入，找不到则停止逻辑更新
+            如果当前帧不是处理输入帧的帧（比如1~4帧），则认为没有输入，相当于清空逻辑输入，执行这些帧的逻辑更新
+
+    追帧：
+        以当前帧是1，最新输入帧是15为例子，因为2~4以及6~9，10~14都是无输入的帧，我们只需要输入帧5和10，从自己的帧缓存中搜索，搜索不到的向服务器请求重新发送输入帧。
+        补全缺失的输入帧后，就可以执行2~15这些帧的逻辑更新，追帧过程中要避免不断请求。
+
+    逻辑更新：
+        逻辑更新函数参数要包含DeltaTime，虽然这个DeltaTime我们知道是个FixedDeltaTime，但是其他模块是不用去管这个DeltaTime是来自哪里，只是认为他是逻辑更新的时间即可
+        逻辑更新过程中读取输入的话要从逻辑输入那读取
+
+5. 暂时不要进行预测和回滚
+
 
 在这个框架上测试流程是这样的：
 1. 启动Server，Server会等待一定数量的Client连接
 2. 启动多个client，然后所有Client处于等待连接服务器的状态，不断向服务器地址发送自己的连接请求
-3. Server被一定数量的Client连接后，会向所有Client发送游戏就绪的信号
-4. Client收到就绪的信号后会停止发送连接请求，然后初始化游戏（加载资源和关卡），此时Client进入Loading界面，画面显示当前这局游戏总共有多少玩家参与以及加载进度，
+3. Server被一定数量的Client连接后，会向所有Client发送游戏就绪的信号，以及所有Client的ID，以及发送到的Client的ID。
+4. Client收到就绪的信号后会停止发送连接请求，然后加载资源和关卡，并且初始化地图以及所有对象（但是不会tick），此时Client进入Loading界面，画面显示当前这局游戏总共有多少玩家参与以及加载进度。需要注意，通过前面的Client ID，可以让不同的ID生成不同位置的坦克。
 5. Client loading结束后发送一个信号给Server，告诉Server自己已经loading 结束，随时可以开始游戏
-5. Server收到所有Client的准备好信号后，会计算当前时间500ms后的时间戳，这个叫时间戳叫 GameStartTime，然后封装进游戏开始的信号，广播给所有Client
-5. Client收到游戏开始的信号后，提取出GameStartTime，等到了GameStartTime才开始逻辑update，第一个tick是进入到游戏画面，这个GameStartTime的设计就是为了考虑Server发给Client的延迟，尽力保证Server和Client都是同步的
+6. Server收到所有Client的准备好信号后，会计算当前时间500ms后的时间戳，这个叫时间戳叫 GameStartTime，然后封装进游戏开始的信号，广播给所有Client
+7. Client收到游戏开始的信号后，提取出GameStartTime，等到了GameStartTime才开始逻辑更新，第一个tick是进入到游戏画面，这个GameStartTime的设计就是为了考虑Server发给Client的延迟，尽力保证Server和Client都是同步的
 
 
 
 
 如果 Client 等待input的时间过长，并且自身还没掉线（心跳确定），那么判断自己就是tick落后了，会从服务器中请求最近的关键帧状态以及之后的所有input，并且开始追帧
 
+
+
+伪代码：
+
+服务器端
+主循环
+function ServerMain():
+    初始化WebSocket服务器
+    初始化游戏状态
+    frameManager = 创建帧管理器(turnSize=5)
+    minRequiredPlayers = 2
+
+    等待客户端连接:
+        当连接客户端 >= minRequiredPlayers:
+            向所有客户端发送游戏就绪信号(GameReady)
+            等待所有客户端发送准备就绪信号(ClientReady)
+
+            计算gameStartTime = 当前时间 + 500ms
+            向所有客户端发送游戏开始信号(GameStart, gameStartTime)
+
+            进入游戏循环
+
+    游戏循环():
+        currentFrame = 0
+        上次发送输入帧时间 = 0
+
+        while 游戏运行:
+            // 计算当前应该处于哪一帧
+            currentTime = 获取当前时间()
+            elapsedTime = currentTime - gameStartTime
+            framesShouldHavePassed = elapsedTime * 60 / 1000  // 假设逻辑帧率60fps
+
+            if framesShouldHavePassed > currentFrame:
+                // 更新到当前应该的帧
+                currentFrame = framesShouldHavePassed
+
+                // 检查是否需要广播输入帧(每turn_size帧一次)
+                if currentFrame % turnSize == 0:
+                    currentTurn = currentFrame / turnSize
+                    inputFrameData = frameManager.收集所有客户端的输入(currentTurn)
+                    向所有客户端广播(InputFrame, currentFrame, inputFrameData)
+
+            处理客户端消息()
+            短暂休眠() // 避免CPU占用过高
+
+帧管理器
+class FrameManager:
+    初始化(turnSize):
+        this.turnSize = turnSize
+        this.inputBuffer = defaultdict(lambda: defaultdict(list))  // {turnId: {clientId: [inputs1, inputs2, ...]}}
+        this.clients = {} // 存储客户端连接
+        this.currentFrame = 0
+
+    收集客户端输入(clientId, inputs):
+        // 如果输入为空，不进行任何处理
+        if 输入为空(inputs):
+            return
+
+        // 将输入添加到当前turn
+        currentTurn = this.currentFrame / this.turnSize
+
+        // 将输入添加到对应客户端的列表中
+        this.inputBuffer[currentTurn][clientId].append(inputs)
+        print(f"Added input from client {clientId} to turn {currentTurn}: {inputs}")
+
+    收集所有客户端的输入(turn):
+        if turn in this.inputBuffer:
+            return this.inputBuffer[turn]
+        else:
+            // 如果没有此turn的输入，为所有客户端创建空输入列表
+            emptyInputs = {}
+            for clientId in this.clients:
+                emptyInputs[clientId] = []
+            return emptyInputs
+
+    准备广播输入帧():
+        // 确定需要广播的输入帧
+        current_turn = this.currentFrame // this.turnSize
+        current_frame = current_turn * this.turnSize
+
+        // 收集这个turn的所有客户端输入
+        turn_inputs = {}
+
+        if current_turn in this.inputBuffer:
+            for clientId, inputsList in this.inputBuffer[current_turn].items():
+                // 如果客户端在这个turn有输入，添加到广播数据中
+                if inputsList:
+                    turn_inputs[clientId] = inputsList
+
+        // 如果没有任何输入，创建一个空的输入列表
+        if not turn_inputs:
+            for clientId in this.clients:
+                turn_inputs[clientId] = []
+
+        return {
+            'type': 'input_frame',
+            'current_frame': current_frame,
+            'inputs': turn_inputs
+        }
+
+消息处理
+function 处理客户端消息():
+    for 每个收到的消息:
+        switch 消息类型:
+            case "连接请求":
+                分配clientId
+                将客户端添加到frameManager.clients
+                发送欢迎消息(clientId)
+
+            case "客户端准备就绪":
+                标记客户端为准备就绪
+                检查是否所有客户端都准备就绪
+
+            case "输入":
+                clientId = 消息.clientId
+                inputs = 消息.inputs
+                frameManager.收集客户端输入(clientId, inputs)
+
+            case "请求输入帧":
+                clientId = 消息.clientId
+                requestedFrames = 消息.frames  // 请求多个帧
+                response = {}
+
+                for each frame in requestedFrames:
+                    turn = frame / turnSize
+                    if turn in frameManager.inputBuffer:
+                        response[frame] = frameManager.inputBuffer[turn]
+
+                if response非空:
+                    发送输入帧给客户端(clientId, response)
+
+客户端主循环
+function ClientMain():
+    初始化游戏引擎
+    初始化网络客户端
+    frameExecutor = 创建帧执行器(turnSize=5)
+    inputManager = 创建输入管理器()
+    logicalInputs = 创建逻辑输入管理器()
+    gameStartTime = 0
+
+    状态 = "连接中"
+
+    游戏循环():  // 实际更新循环，没有帧率上限
+        while 游戏运行:
+            switch 状态:
+                case "连接中":
+                    尝试连接服务器()
+                    如果连接成功:
+                        状态 = "等待游戏就绪"
+
+                case "等待游戏就绪":
+                    // 等待服务器的游戏就绪信号
+
+                case "加载中":
+                    加载资源和地图()
+                    初始化游戏对象()
+
+                    发送客户端准备就绪信号()
+                    状态 = "等待游戏开始"
+
+                case "等待游戏开始":
+                    currentTime = 获取当前时间()
+                    if currentTime >= gameStartTime:
+                        状态 = "游戏中"
+                        frameExecutor.设置开始时间(gameStartTime)
+
+                case "游戏中":
+                    // 捕获输入并发送到服务器
+                    inputs = inputManager.捕获输入()
+                    if inputManager.输入是否改变():
+                        发送输入到服务器(inputs)
+
+                    // 执行逻辑帧更新 - 内部会处理定时和追帧
+                    frameExecutor.执行逻辑帧(logicalInputs)
+
+                    // 渲染游戏 - 渲染不受逻辑帧率限制
+                    渲染游戏()
+
+            处理网络消息()
+            等待下一帧() // 实际更新的帧间隔，可以非常短
+
+帧执行器
+class FrameExecutor:
+    初始化(turnSize):
+        this.turnSize = turnSize
+        this.inputBuffer = {} // {frameId: {clientId: [inputs1, inputs2, ...]}}
+        this.currentFrame = 0
+        this.lastProcessedInputFrame = -1
+        this.waitingForInput = false
+        this.latestReceivedFrame = -1
+        this.missingFrames = [] // 存储缺失的帧ID
+
+        this.gameStartTime = 0
+        this.logicAccumulator = 0  // 时间累积器
+        this.logicFrameInterval = 1000 / 60  // 60fps的逻辑帧率对应的毫秒间隔
+        this.lastUpdateTime = 0    // 上次实际更新的时间
+
+        this.logicalInputs = 创建逻辑输入管理器()  // 内部保存逻辑输入
+
+    设置开始时间(startTime):
+        this.gameStartTime = startTime
+        this.lastUpdateTime = startTime
+        this.logicAccumulator = 0
+
+    添加输入帧(frame, inputs):
+        // inputs格式: {clientId: [inputs1, inputs2, ...]}
+
+        // 将输入添加到缓冲区
+        this.inputBuffer[frame] = inputs
+        this.latestReceivedFrame = max(this.latestReceivedFrame, frame)
+
+        // 如果有缺失的帧，检查是否已经收到
+        if this.missingFrames非空:
+            this.missingFrames = [f for f in this.missingFrames if f not in this.inputBuffer]
+
+            // 如果所有缺失的帧都收到了
+            if this.missingFrames为空 and this.waitingForInput:
+                this.waitingForInput = false
+
+    执行逻辑帧():
+        currentTime = 获取当前时间()
+        deltaTime = currentTime - this.lastUpdateTime
+        this.lastUpdateTime = currentTime
+
+        // 将实际经过的时间添加到累积器
+        this.logicAccumulator += deltaTime
+
+        // 当累积器超过帧间隔时执行逻辑帧
+        while this.logicAccumulator >= this.logicFrameInterval:
+            // 检查是否需要追帧
+            if this.latestReceivedFrame > this.currentFrame:
+                // 需要追帧
+                if !this.执行追帧():
+                    break  // 如果追帧失败（等待输入），中断循环
+            else:
+                // 正常执行当前帧
+                if !this.执行当前帧():
+                    break  // 如果执行失败（等待输入），中断循环
+
+            // 从累积器中减去一个帧间隔
+            this.logicAccumulator -= this.logicFrameInterval
+
+            // 为了防止过度追帧，设置一个最大执行帧数
+            if (currentTime - this.lastUpdateTime) > 100:  // 如果已经执行了超过100ms
+                break
+
+    执行当前帧():
+        // 检查是否是输入帧（turn_size的倍数）
+        isInputFrame = (this.currentFrame % this.turnSize == 0)
+
+        if isInputFrame:
+            // 是输入帧，需要检查是否有此帧的输入数据
+            if this.currentFrame in this.inputBuffer:
+                // 从缓冲区获取输入数据并设置给逻辑输入管理器
+                inputFrameData = this.inputBuffer[this.currentFrame]
+                this.logicalInputs.设置输入帧(inputFrameData)
+
+                // 更新游戏状态
+                更新游戏状态(FIXED_DELTA_TIME, this.logicalInputs)
+                this.currentFrame++
+                return true
+            else:
+                // 没有此帧的输入数据，需要等待
+                this.waitingForInput = true
+                return false
+        else:
+            // 不是输入帧，保持当前逻辑输入不变
+            // 更新游戏状态
+            更新游戏状态(FIXED_DELTA_TIME, this.logicalInputs)
+            this.currentFrame++
+            return true
+
+    执行追帧():
+        // 找出所有需要的输入帧
+        neededFrames = []
+        for frame = this.currentFrame to this.latestReceivedFrame:
+            if frame % this.turnSize == 0 and frame not in this.inputBuffer:
+                neededFrames.append(frame)
+
+        if neededFrames非空:
+            // 请求所有缺失的帧
+            this.missingFrames = neededFrames
+            this.waitingForInput = true
+            请求缺失的输入帧(this.missingFrames)
+            return false
+
+        // 尝试执行当前帧
+        return this.执行当前帧()
+
+
+请求缺失的输入帧
+function 请求缺失的输入帧(missingFrames):
+    if missingFrames为空:
+        return
+
+    // 创建请求消息
+    请求消息 = {
+        type: "请求输入帧",
+        frames: missingFrames
+    }
+
+    // 发送请求
+    发送消息到服务器(请求消息)
+
+    // 可以设置超时重试机制
+    设置超时(3000, function() {
+        if frameExecutor.missingFrames非空:
+            请求缺失的输入帧(frameExecutor.missingFrames)
+    })
+
+逻辑输入管理器
+class LogicalInputManager:
+    初始化():
+        this.clientInputs = {} // {clientId: 合并后的输入}
+
+    合并输入(clientId, inputsList):
+        // 如果客户端没有输入列表，不处理
+        if !inputsList or len(inputsList) == 0:
+            return
+
+        // 创建默认的空输入
+        mergedInput = {'movement': 'stop', 'shoot': false}
+
+        // 按照时序逐个应用输入，后面的可能覆盖前面的
+        for input in inputsList:
+            // 对于移动，直接使用最后一个非stop的指令
+            if input['movement'] != 'stop':
+                mergedInput['movement'] = input['movement']
+
+            // 对于射击，如果任何一个输入包含射击，则最终结果就是射击
+            if input['shoot']:
+                mergedInput['shoot'] = true
+
+        // 将合并后的输入保存到客户端输入映射
+        this.clientInputs[clientId] = mergedInput
+
+    设置输入帧(inputFrameData):
+        // inputFrameData格式: {clientId: [inputs1, inputs2, ...]}
+        for clientId, inputsList in inputFrameData.items():
+            this.合并输入(clientId, inputsList)
+
+    获取客户端输入(clientId):
+        if clientId in this.clientInputs:
+            return this.clientInputs[clientId]
+        else:
+            return {'movement': 'stop', 'shoot': false} // 默认空输入
+
+
+输入管理器
+class InputManager:
+    初始化():
+        this.currentInputs = {}
+        this.previousInputs = {}
+        this.hasNonEmptyInput = false
+
+    捕获输入():
+        this.previousInputs = 复制(this.currentInputs)
+        this.currentInputs = 获取当前用户输入()
+
+        // 检查输入是否为空
+        this.hasNonEmptyInput = !输入为空(this.currentInputs)
+        return this.currentInputs
+
+    输入是否非空():
+        return this.hasNonEmptyInput
+
+    输入为空(inputs):
+        // 检查输入是否为默认的停止状态且没有射击
+        return inputs['movement'] == 'stop' && !inputs['shoot']
+
+
+网络消息处理
+function 处理网络消息():
+    for 每个收到的消息:
+        switch 消息类型:
+            case "欢迎":
+                clientId = 消息.clientId
+                保存自己的clientId
+
+            case "游戏就绪":
+                状态 = "加载中"
+                players = 消息.players
+
+            case "游戏开始":
+                gameStartTime = 消息.gameStartTime
+                players = 消息.players
+
+            case "输入帧":
+                frame = 消息.frame
+                inputs = 消息.inputs
+                frameExecutor.添加输入帧(frame, inputs)
+
+            case "输入帧响应": // 响应请求的输入帧
+                frames = 消息.frames // {frameId: inputs}
+                for each frameId, frameInputs in frames:
+                    frameExecutor.添加输入帧(frameId, frameInputs)
+
+更新游戏状态
+function 更新游戏状态(deltaTime, logicalInputs):
+    // 这是主要的游戏逻辑更新函数
+
+    // 从逻辑输入管理器获取当前输入并应用
+    for each clientId, tank in 所有坦克:
+        inputs = logicalInputs.获取客户端输入(clientId)
+        应用输入到坦克(tank, inputs)
+
+    // 更新所有游戏对象
+    更新坦克(deltaTime)
+    更新子弹(deltaTime)
+    检测碰撞()
+    更新粒子系统(deltaTime)
+    // ... 其他游戏状态更新
